@@ -375,6 +375,14 @@ def cmd_look(args: argparse.Namespace) -> int:
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
+    from . import context
+
+    decision = context.decide()
+    print("SHOULD MR ROY BE LISTENING RIGHT NOW?")
+    print(f"  answer    : {decision.mode.upper()}")
+    print(f"  because   : {decision.reason}")
+    print(f"  frontmost : {decision.frontmost}")
+    print()
     health = micgate.gate_health()
     print(json.dumps(health, indent=2))
     users = micgate.mic_users()
