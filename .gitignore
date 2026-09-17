@@ -1,0 +1,8 @@
+cache/
+data/
+reports/
+__pycache__/
+*.pyc
+.venv/
+phoneme_ledger.egg-info/
+mr_roy.egg-info/

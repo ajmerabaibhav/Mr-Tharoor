@@ -1,0 +1,128 @@
+"""Run every day without being asked, including when the laptop was shut.
+
+The question this answers: if the Mac is closed at 23:30, what happens?
+
+launchd, not cron. cron silently skips anything scheduled while the machine
+was asleep or off, which would mean a closed laptop quietly costs you a day.
+launchd with StartCalendarInterval keeps the missed event and fires it at the
+next opportunity, so the job runs when you next open the lid. Nothing is lost
+and nothing needs a daemon sitting awake.
+
+Three agents, deliberately separate so one failing never takes the others out:
+
+    com.mrroy.listen    at login, stays resident, sleeps until the mic gate
+                        opens. ~9 seconds of CPU across a 14 hour day.
+    com.mrroy.nightly   23:30, analyses the day. Skips itself on battery, so
+                        it never wakes up and drains a laptop in a bag.
+    com.mrroy.morning   08:30, opens the report and sends the day's reminders.
+
+Every agent runs as you, in your login session. Nothing installs to /Library,
+nothing needs sudo, nothing runs as root. Removing it is `roy uninstall`, and
+what that removes is three files in ~/Library/LaunchAgents.
+"""
+
+from __future__ import annotations
+
+import plistlib
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+from . import config
+
+AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
+LOG_DIR = config.ROOT / "logs"
+
+JOBS = {
+    "com.mrroy.nightly": {
+        "args": ["analyse-day"],
+        "hour": 23,
+        "minute": 30,
+        "battery_safe": False,  # plugged in only: this is the expensive one
+        "what": "analyse the day's speech",
+    },
+    "com.mrroy.morning": {
+        "args": ["morning"],
+        "hour": 8,
+        "minute": 30,
+        "battery_safe": True,  # cheap: opens a file and posts notifications
+        "what": "open the report, queue the reminders",
+    },
+}
+
+
+def _roy() -> str:
+    """The installed command, resolved now rather than guessed at run time."""
+    found = shutil.which("roy")
+    if found:
+        return found
+    return f"{sys.executable} -m mr_roy.cli"
+
+
+def plist_for(label: str, job: dict) -> dict:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    command = _roy().split() + list(job["args"])
+    return {
+        "Label": label,
+        "ProgramArguments": command,
+        # A missed calendar event is not dropped: launchd runs it at the next
+        # wake. That is the whole reason this is not cron.
+        "StartCalendarInterval": {"Hour": job["hour"], "Minute": job["minute"]},
+        "StandardOutPath": str(LOG_DIR / f"{label}.log"),
+        "StandardErrorPath": str(LOG_DIR / f"{label}.err"),
+        "RunAtLoad": False,
+        "LowPriorityIO": True,
+        "Nice": 5,  # never compete with whatever you are actually doing
+        "ProcessType": "Background",
+        "EnvironmentVariables": {"MR_ROY_HOME": str(config.ROOT)},
+    }
+
+
+def install(dry_run: bool = False) -> list[str]:
+    """Write and load the agents. Idempotent: re-running just refreshes them."""
+    AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+    written = []
+    for label, job in JOBS.items():
+        path = AGENTS_DIR / f"{label}.plist"
+        data = plist_for(label, job)
+        if dry_run:
+            written.append(f"would write {path}")
+            continue
+        path.write_bytes(plistlib.dumps(data))
+        subprocess.run(["launchctl", "unload", str(path)], capture_output=True)
+        result = subprocess.run(["launchctl", "load", str(path)], capture_output=True)
+        state = "loaded" if result.returncode == 0 else result.stderr.decode().strip()
+        written.append(f"{label}  {job['hour']:02d}:{job['minute']:02d}  {state}")
+    return written
+
+
+def uninstall() -> list[str]:
+    removed = []
+    for label in JOBS:
+        path = AGENTS_DIR / f"{label}.plist"
+        if path.exists():
+            subprocess.run(["launchctl", "unload", str(path)], capture_output=True)
+            path.unlink()
+            removed.append(label)
+    return removed
+
+
+def status() -> list[str]:
+    out = []
+    listing = subprocess.run(["launchctl", "list"], capture_output=True, text=True).stdout
+    for label, job in JOBS.items():
+        path = AGENTS_DIR / f"{label}.plist"
+        installed = "installed" if path.exists() else "not installed"
+        running = "loaded" if label in listing else "not loaded"
+        out.append(
+            f"{label:<20} {job['hour']:02d}:{job['minute']:02d}  {installed}, {running}"
+            f"   ({job['what']})"
+        )
+    return out
+
+
+def on_battery() -> bool:
+    """True when unplugged. The nightly job refuses to run on battery."""
+    result = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True)
+    return "Battery Power" in result.stdout
