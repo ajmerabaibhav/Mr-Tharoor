@@ -73,13 +73,22 @@ def plist_for(label: str, job: dict) -> dict:
     command = _roy().split() + list(job["args"])
     schedule: dict = {}
     if job.get("resident"):
-        # Starts at login and is restarted if it dies. KeepAlive is scoped to
-        # abnormal exit so that `roy install --remove` and a clean Ctrl-C are
-        # respected rather than fought; ThrottleInterval stops a crash loop
-        # from spinning the CPU.
+        # KeepAlive: True, not {"SuccessfulExit": False}.
+        #
+        # The listener handles SIGTERM gracefully and exits 0, which is
+        # correct behaviour. But under SuccessfulExit:False launchd reads a
+        # clean exit as "it meant to stop" and never restarts it. Anything
+        # that signals the process -- a test, a reinstall, Activity Monitor,
+        # a logout -- left it permanently dead and silent. Observed: it
+        # captured four real chunks, was signalled, exited 0, and stayed down.
+        #
+        # True means always bring it back. Stopping it deliberately is
+        # `roy install --remove`, which unloads the job so there is nothing
+        # left to restart. ThrottleInterval keeps a crash loop from spinning
+        # the CPU.
         schedule["RunAtLoad"] = True
-        schedule["KeepAlive"] = {"SuccessfulExit": False}
-        schedule["ThrottleInterval"] = 60
+        schedule["KeepAlive"] = True
+        schedule["ThrottleInterval"] = 30
     else:
         # A missed calendar event is not dropped: launchd runs it at the next
         # wake. That is the whole reason this is not cron.

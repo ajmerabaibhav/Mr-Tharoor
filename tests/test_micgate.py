@@ -27,6 +27,25 @@ with sd.InputStream(samplerate=16000, channels=1):
 """
 
 
+HELPER_SIGNATURE = "import sounddevice as sd, time"
+
+
+def _is_our_helper(pid: int) -> bool:
+    """Did this test file start that process?
+
+    The check is the command line, not the fact that it holds the microphone.
+    Holding the microphone is what Zoom does during a meeting.
+    """
+    try:
+        command = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+    except (subprocess.SubprocessError, OSError):
+        return False
+    return HELPER_SIGNATURE in command
+
+
 def wait_for(predicate, timeout=8.0, interval=0.25):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -83,13 +102,16 @@ def main() -> int:
     # a beat before deciding the machine is busy, or this test fails at random
     # when run back to back -- and a flaky test is worse than no test, because
     # it teaches you to ignore a red result.
-    # Clear anything a previous crashed run left behind before judging the
-    # machine to be busy.
+    # Clear only the helpers THIS test file spawns. An earlier version killed
+    # anything holding the microphone, which would have terminated a Zoom call
+    # or the user's own listener daemon. A test may never SIGTERM a process it
+    # did not create.
     for stray in micgate.mic_users():
-        try:
-            os.kill(stray.pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            pass  # not ours to kill; the check below handles it
+        if _is_our_helper(stray.pid):
+            try:
+                os.kill(stray.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
     wait_for(lambda: not micgate.mic_users(), timeout=3.0)
     already = micgate.mic_users()
     if already:
