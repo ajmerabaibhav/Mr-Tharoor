@@ -9,6 +9,8 @@ Run: python3 tests/test_micgate.py
 Needs microphone permission for your terminal. macOS will ask once.
 """
 
+import os
+import signal
 import subprocess
 import sys
 import time
@@ -81,6 +83,13 @@ def main() -> int:
     # a beat before deciding the machine is busy, or this test fails at random
     # when run back to back -- and a flaky test is worse than no test, because
     # it teaches you to ignore a red result.
+    # Clear anything a previous crashed run left behind before judging the
+    # machine to be busy.
+    for stray in micgate.mic_users():
+        try:
+            os.kill(stray.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass  # not ours to kill; the check below handles it
     wait_for(lambda: not micgate.mic_users(), timeout=3.0)
     already = micgate.mic_users()
     if already:
@@ -93,7 +102,7 @@ def main() -> int:
         print("idle       -> False  ok")
 
     holder = subprocess.Popen([sys.executable, "-c", HOLD_MIC])
-    try:
+    try:  # noqa: PLR1702
         assert wait_for(micgate.is_mic_in_use), (
             "gate never opened while another process held the mic. If macOS "
             "showed a permission prompt, grant it and re-run."
@@ -108,7 +117,17 @@ def main() -> int:
         assert not any(u.pid == __import__("os").getpid() for u in micgate.mic_users())
         print("self       -> excluded ok")
     finally:
-        holder.wait(timeout=12)
+        # Kill it, do not merely wait for it. An assertion failure above used
+        # to leave this process orphaned and still holding the microphone,
+        # which then failed the NEXT run, and the one after that. One flaky
+        # test became a permanently broken suite. PortAudio can also hang on
+        # stream close when the device is contended, so waiting is not enough.
+        holder.terminate()
+        try:
+            holder.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            holder.kill()
+            holder.wait(timeout=5)
 
     if not already:
         assert wait_for(lambda: not micgate.is_mic_in_use()), (
