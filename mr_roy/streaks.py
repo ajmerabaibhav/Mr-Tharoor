@@ -360,10 +360,45 @@ def tonights_report(today: date | None = None) -> list[ReportRow]:
 
 
 def expired_audio_days(today: date | None = None) -> list[str]:
-    """Days whose raw audio should be deleted tonight. Counts are kept."""
+    """Days whose raw audio should be deleted tonight. Counts are kept.
+
+    Reads the session folders on disk, not the tally file. Audio recorded on a
+    day that was never analysed has no tally, and keying off tallies meant
+    exactly those days -- the ones a failed or skipped job left behind -- were
+    the ones never cleaned up.
+    """
     today = today or date.today()
-    cutoff = today - timedelta(days=AUDIO_RETENTION_DAYS)
-    return sorted(day for day in _load() if day < cutoff.isoformat())
+    cutoff = (today - timedelta(days=AUDIO_RETENTION_DAYS)).isoformat()
+    sessions = config.DATA_DIR / "sessions"
+    days = {day for day in _load()}
+    if sessions.exists():
+        days |= {folder.name for folder in sessions.iterdir() if folder.is_dir()}
+    return sorted(day for day in days if day < cutoff)
+
+
+def purge_expired_audio(today: date | None = None) -> tuple[int, float]:
+    """Delete audio past the retention window. Returns (files, megabytes).
+
+    Deliberately independent of analysis. It used to run only at the end of a
+    successful nightly job, so a laptop that was on battery at 23:30 every
+    night -- the normal case -- never cleaned up at all, and an hour of speech
+    is 115 MB. Deleting files is cheap and safe; it runs regardless.
+    """
+    removed = 0
+    freed = 0.0
+    for day in expired_audio_days(today):
+        folder = config.DATA_DIR / "sessions" / day
+        if not folder.exists():
+            continue
+        for wav in folder.glob("*.wav"):
+            freed += wav.stat().st_size
+            wav.unlink()
+            removed += 1
+        try:
+            folder.rmdir()
+        except OSError:
+            pass  # something else is in there; leave it alone
+    return removed, round(freed / 1e6, 1)
 
 
 if __name__ == "__main__":

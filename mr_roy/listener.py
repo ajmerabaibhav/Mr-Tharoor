@@ -49,12 +49,25 @@ IDLE_EVERY = 5.0  # how often to re-check context while asleep
 MIN_RMS = 0.004
 MIN_ZCR, MAX_ZCR = 0.02, 0.35
 
+# A hard ceiling on recorded audio. An hour of speech is 115 MB, and the only
+# thing that deletes it is a nightly job that can be skipped or can fail. This
+# is the backstop: stop recording rather than fill someone's disk.
+MAX_SESSION_MB = 2000
+
 
 def sessions_dir(day: date | None = None) -> Path:
     day = day or date.today()
     path = config.DATA_DIR / "sessions" / day.isoformat()
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def recorded_megabytes() -> float:
+    """How much audio is currently on disk, across every day."""
+    sessions = config.DATA_DIR / "sessions"
+    if not sessions.exists():
+        return 0.0
+    return sum(f.stat().st_size for f in sessions.rglob("*.wav")) / 1e6
 
 
 def has_speech(audio) -> bool:
@@ -162,6 +175,16 @@ class Listener:
         while self.running:
             if deadline and time.time() > deadline:
                 break
+            used = recorded_megabytes()
+            if used > MAX_SESSION_MB:
+                self.logger.error(
+                    f"{used:.0f} MB of audio on disk, over the {MAX_SESSION_MB} MB "
+                    f"ceiling. Not recording. Run `roy analyse-day` or delete "
+                    f"{config.DATA_DIR / 'sessions'}."
+                )
+                time.sleep(300)
+                continue
+
             decision = context.decide()
             if decision.mode != last_mode:
                 self.logger.info(f"{decision.mode.upper()}: {decision.reason}")

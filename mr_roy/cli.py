@@ -384,6 +384,14 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
     when = _date.fromisoformat(args.day) if args.day else _date.today()
     logger = log.get("nightly")
 
+    # Housekeeping first, and unconditionally. It is cheap, and tying it to a
+    # successful analysis meant a laptop on battery at 23:30 every night never
+    # cleaned up anything.
+    files, freed = streaks.purge_expired_audio(when)
+    if files:
+        logger.info(f"deleted {files} expired recordings, freed {freed} MB")
+        print(f"  cleaned up {files} old recordings ({freed} MB), tallies kept")
+
     if schedule.on_battery() and not args.force:
         logger.info("on battery, skipping (use --force to override)")
         print("  On battery. Skipping so nothing drains in your bag. --force to override.")
@@ -412,14 +420,6 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
         daily.save(findings, when)
         added = remind.enqueue(findings)
         written = report.write(findings, when)
-
-        # Audio ages out; the tallies it produced do not.
-        for old in streaks.expired_audio_days(when):
-            folder = config.DATA_DIR / "sessions" / old
-            if folder.exists():
-                for wav in folder.glob("*.wav"):
-                    wav.unlink()
-                logger.info(f"deleted audio for {old}, kept its tallies")
 
     log.event("nightly_done", day=str(when), findings=len(findings), cards=added)
     print(f"\n  {len(findings)} findings, {added} new reminder cards")
