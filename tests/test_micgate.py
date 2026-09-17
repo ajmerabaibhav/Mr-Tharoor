@@ -76,6 +76,12 @@ def main() -> int:
         "device-running check and cannot exclude our own stream"
     )
 
+    # A previous run's helper process may still be releasing the device, and
+    # CoreAudio reports the release a moment after the process exits. Give it
+    # a beat before deciding the machine is busy, or this test fails at random
+    # when run back to back -- and a flaky test is worse than no test, because
+    # it teaches you to ignore a red result.
+    wait_for(lambda: not micgate.mic_users(), timeout=3.0)
     already = micgate.mic_users()
     if already:
         # Not a failure: a dictation app or Siri may legitimately hold the
