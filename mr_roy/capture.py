@@ -96,6 +96,23 @@ def record(seconds: float, destination: str, voice_processing: bool = True) -> d
         enabled = bool(ok) and bool(node.isVoiceProcessingEnabled())
         if not ok:
             print(f"mr-roy: voice processing unavailable ({error}), recording raw")
+        elif hasattr(node, "setVoiceProcessingOtherAudioDuckingConfiguration_"):
+            # Echo cancellation ducks everything else the Mac is playing, and
+            # it does that by default. The symptom is a YouTube video going
+            # quiet for no visible reason while this is running. We are only
+            # listening, never playing into the same room, so there is no echo
+            # to cancel and no reason to touch anyone else's volume.
+            #
+            # The constant naming is inverted: Min (10) means minimum ducking,
+            # Default (0) means the aggressive standard behaviour.
+            try:
+                config_cls = AVFoundation.AVAudioVoiceProcessingOtherAudioDuckingConfiguration
+                quiet = config_cls(
+                    False, AVFoundation.AVAudioVoiceProcessingOtherAudioDuckingLevelMin
+                )
+                node.setVoiceProcessingOtherAudioDuckingConfiguration_(quiet)
+            except Exception as exc:  # noqa: BLE001
+                print(f"mr-roy: could not disable audio ducking ({exc})")
 
     fmt = node.outputFormatForBus_(0)
     rate = int(fmt.sampleRate())

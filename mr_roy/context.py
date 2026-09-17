@@ -193,16 +193,22 @@ def frontmost() -> str | None:
 
 
 def playing_media(front: str | None = None) -> str | None:
-    """Which app is making sound, if it is the sort that means 'watching'.
+    """Which app is making sound, if it means you are listening not talking.
 
-    A browser producing audio is a video, so the frontmost app counts as
-    media when it is the one making the noise. No URL is ever read.
+    Checks EVERY app, not just the frontmost one. The earlier version only
+    counted the front app as media, so a YouTube video playing in a background
+    Chrome window while you read in Claude did not register, and the mic kept
+    peeking over the top of it. Where the sound is coming from matters; which
+    window happens to be in front does not.
+
+    A browser making sound is a video. A browser on a call holds the
+    microphone, and that is checked before this. No URL is ever read.
     """
     for app in micgate.audio_output_apps():
         bundle = app.bundle_id or ""
-        if bundle in MEDIA_APPS:
-            return bundle
-        if front and bundle == front and bundle not in CALL_APPS:
+        if not bundle or bundle in CALL_APPS:
+            continue
+        if bundle in MEDIA_APPS or bundle in READING_APPS:
             return bundle
     return None
 
