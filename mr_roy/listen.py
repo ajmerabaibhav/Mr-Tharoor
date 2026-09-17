@@ -221,15 +221,44 @@ def _arpabet_to_ipa(phone: str) -> str:
     return ARPABET_TO_IPA.get(base, "")
 
 
-@lru_cache(maxsize=4096)
-def canonical(word: str) -> tuple[str, ...]:
-    """The phonemes this word is supposed to have. Empty if unknown."""
+@lru_cache(maxsize=1)
+def _cmudict() -> dict:
+    """Load the dictionary once.
+
+    cmudict.dict() reparses all 126,000 entries on every call and caches
+    nothing, so calling it per word turned a 2 second analysis into 30.
+    """
     import cmudict
 
-    entries = cmudict.dict().get(word.lower())
+    return cmudict.dict()
+
+
+@lru_cache(maxsize=4096)
+def variants(word: str) -> tuple[tuple[str, ...], ...]:
+    """EVERY pronunciation this word legitimately has.
+
+    "record" is /rEk@rd/ as a noun and /rI'kOrd/ as a verb. Comparing you
+    against only the first means half the time you are marked wrong for
+    saying the other correct one -- and stress is a contrast we score, so
+    this misfires on exactly the feature it should serve. Same for read,
+    present, object, address, live, close, lead.
+    """
+    entries = _cmudict().get(word.lower())
     if not entries:
         return ()
-    return tuple(_arpabet_to_ipa(phone) for phone in entries[0])
+    seen: list[tuple[str, ...]] = []
+    for entry in entries:
+        form = tuple(p for p in (_arpabet_to_ipa(phone) for phone in entry) if p)
+        if form and form not in seen:
+            seen.append(form)
+    return tuple(seen)
+
+
+@lru_cache(maxsize=4096)
+def canonical(word: str) -> tuple[str, ...]:
+    """The most common pronunciation. Empty if unknown."""
+    forms = variants(word)
+    return forms[0] if forms else ()
 
 
 def expected_phonemes(text: str) -> tuple[list[str], list[str]]:
@@ -238,26 +267,68 @@ def expected_phonemes(text: str) -> tuple[list[str], list[str]]:
     return phonemes, words
 
 
-def expected_with_words(text: str) -> tuple[list[str], list[str], list[str]]:
-    """Phonemes, the word each phoneme belongs to, and the word list.
-
-    Without the middle one a finding can only say "a /v/ somewhere went
-    wrong", which teaches nobody anything. With it the report can say
-    "version", play you saying it, and play it said correctly.
-    """
+def _build(text: str, choice: dict[str, int]) -> tuple[list[str], list[str], list[str]]:
     phonemes: list[str] = []
     owner: list[str] = []
     words: list[str] = []
     for word in _WORD.findall(text.lower()):
-        got = canonical(word)
-        if not got:
+        forms = variants(word)
+        if not forms:
             continue  # unknown word: skip rather than guess and mis-score
-        for phone in got:
-            if phone:
-                phonemes.append(phone)
-                owner.append(word)
+        form = forms[min(choice.get(word, 0), len(forms) - 1)]
+        for phone in form:
+            phonemes.append(phone)
+            owner.append(word)
         words.append(word)
     return phonemes, owner, words
+
+
+def _score(expected: list[str], actual: list[Token]) -> float:
+    """Total alignment score. Higher means the two agree more.
+
+    Matches earn, substitutions and gaps cost, using the same phonetic
+    similarity the aligner uses, so the comparison between two candidate
+    pronunciations is on the same footing as the alignment itself.
+    """
+    diffs = align(expected, actual)
+    total = 0.0
+    consumed = 0
+    for diff in diffs:
+        if diff.expected and diff.actual:
+            total += _substitution_score(diff.expected, diff.actual)
+            consumed += 1
+        else:
+            total -= 1.5
+            consumed += 1 if diff.expected else 0
+    return total + 2.0 * (len(expected) - consumed)
+
+
+def expected_with_words(
+    text: str, actual: list[Token] | None = None
+) -> tuple[list[str], list[str], list[str]]:
+    """Phonemes, the word each belongs to, and the word list.
+
+    When the heard audio is supplied, each word with more than one valid
+    pronunciation is tested against it and the better-fitting one is kept.
+    That is the homograph fix: you are only marked wrong when you match NONE
+    of the ways the word is legitimately said, rather than whichever one the
+    dictionary happened to list first.
+    """
+    if actual is None:
+        return _build(text, {})
+
+    choice: dict[str, int] = {}
+    best = _score(_build(text, choice)[0], actual)
+    for word in dict.fromkeys(_WORD.findall(text.lower())):
+        forms = variants(word)
+        if len(forms) < 2:
+            continue
+        for index in range(1, len(forms)):
+            trial = {**choice, word: index}
+            score = _score(_build(text, trial)[0], actual)
+            if score > best:
+                best, choice = score, trial
+    return _build(text, choice)
 
 
 def heard(wav_path: str, enhance: bool = True) -> list[Token]:
@@ -369,6 +440,80 @@ def audio_quality(wav_path: str) -> dict:
             "usable": snr >= MIN_SNR_DB, "advice": advice}
 
 
+@lru_cache(maxsize=1)
+def _whisper():
+    """Words, from speech that had no script.
+
+    The probe knew its own text. Real speech does not, so something has to
+    supply the words before the sounds can be judged against them. Whisper is
+    used ONLY for that: what you meant. What you actually said still comes
+    from the phoneme model, which has no language model and therefore no
+    ability to quietly correct you.
+    """
+    from faster_whisper import WhisperModel
+
+    # small.en, not base.en. Measured on real recordings: base turned
+    # "go through the numbers together before Thursday" into "go through the
+    # most together for photos". small gets that sentence perfectly. The
+    # extra 2 seconds per chunk is nothing in a job that runs at 23:30.
+    return WhisperModel("small.en", device="cpu", compute_type="int8")
+
+
+# Below this, the recogniser was guessing at the word rather than hearing it.
+MISHEARD_PROBABILITY = 0.55
+
+
+def transcribe(wav_path: str) -> list[dict]:
+    """Segments of speech, with per-word confidence.
+
+    The confidence matters more than it looks. Measured on real recordings,
+    the words Whisper got wrong were not random: "version" became "mission",
+    "vulnerable" became "wondering", "delivery" became "telephony". Every one
+    of them a /v/ word, from a speaker who produces /w/ for /v/.
+
+    Whisper was not failing. It was correctly transcribing what was actually
+    said. That is the circularity at the heart of this design: to judge how a
+    word was pronounced we need to know which word was meant, and the only
+    evidence is a pronunciation wrong enough to change the word.
+
+    It is also the most useful signal available, because it is the real-world
+    consequence rather than a proxy for it. A machine trained on enormous
+    amounts of speech misheard you; a person in a meeting would too. So a low
+    word probability is kept and surfaced, not discarded.
+    """
+    try:
+        model = _whisper()
+    except Exception:
+        return []
+    segments, _ = model.transcribe(
+        wav_path, language="en", vad_filter=True, word_timestamps=True
+    )
+    out = []
+    for segment in segments:
+        text = segment.text.strip()
+        if not text:
+            continue
+        words = [
+            {
+                "word": w.word.strip(),
+                "start": w.start,
+                "probability": w.probability,
+                "misheard": w.probability < MISHEARD_PROBABILITY,
+            }
+            for w in (segment.words or [])
+        ]
+        out.append(
+            {
+                "start": segment.start,
+                "end": segment.end,
+                "text": text,
+                "words": words,
+                "misheard": [w for w in words if w["misheard"]],
+            }
+        )
+    return out
+
+
 def _classify(expected: str, actual: str) -> str | None:
     """Is this difference one of the ones we care about?"""
     for name, (want, instead) in CONTRASTS.items():
@@ -437,8 +582,8 @@ def analyse(wav_path: str, text: str) -> dict:
     identical to a real one.
     """
     quality = audio_quality(wav_path)
-    expected, owner, words = expected_with_words(text)
     actual = heard(wav_path)
+    expected, owner, words = expected_with_words(text, actual)
     diffs = align(expected, actual)
     for diff in diffs:  # name the word each difference happened in
         if 0 <= diff.index < len(owner):

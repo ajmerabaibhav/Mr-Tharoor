@@ -5,6 +5,9 @@
     roy look comfortable          IPA and source, no sound
     roy check                     judge his flags, so we learn if he is right
     roy score                     how accurate he has actually been
+    roy listen                    start listening (context-aware, all day)
+    roy analyse-day               the 23:30 job: score today, build the report
+    roy morning                   the 08:30 job: open it, send reminders
     roy probe                     record the 20 sentences that test if he works
     roy analyse                   score those recordings, see if he can hear you
     roy mictest                   compare microphones, find your best setup
@@ -363,6 +366,94 @@ def cmd_remind(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_listen(args: argparse.Namespace) -> int:
+    from . import listener
+
+    worker = listener.Listener(use_voice_processing=not args.raw)
+    stats = worker.run(max_seconds=args.seconds)
+    print(f"  {stats.as_dict()}")
+    return 0
+
+
+def cmd_analyse_day(args: argparse.Namespace) -> int:
+    """The nightly job. Every step logged, so a failure is never silent."""
+    from datetime import date as _date
+
+    from . import daily, listener, listen, log, remind, report, schedule, streaks
+
+    when = _date.fromisoformat(args.day) if args.day else _date.today()
+    logger = log.get("nightly")
+
+    if schedule.on_battery() and not args.force:
+        logger.info("on battery, skipping (use --force to override)")
+        print("  On battery. Skipping so nothing drains in your bag. --force to override.")
+        return 0
+
+    chunks = listener.todays_audio(when)
+    print(f"  {len(chunks)} recordings for {when}")
+    if not chunks:
+        logger.info(f"nothing recorded for {when}")
+        print("  Nothing to analyse. Is `roy listen` running?")
+        return 0
+
+    findings = []
+    with log.step("nightly", day=str(when), chunks=len(chunks)):
+        for index, chunk in enumerate(chunks, 1):
+            quality = listen.audio_quality(str(chunk))
+            if not quality["usable"]:
+                logger.info(f"skip {chunk.name}: SNR {quality['snr_db']}dB too low")
+                continue
+            for segment in listen.transcribe(str(chunk)):
+                findings += daily.findings_for(
+                    str(chunk), segment["text"], f"{chunk.stem}-{int(segment['start'])}"
+                )
+            print(f"    {index}/{len(chunks)} {chunk.name}  ({len(findings)} findings so far)")
+
+        daily.save(findings, when)
+        added = remind.enqueue(findings)
+        written = report.write(findings, when)
+
+        # Audio ages out; the tallies it produced do not.
+        for old in streaks.expired_audio_days(when):
+            folder = config.DATA_DIR / "sessions" / old
+            if folder.exists():
+                for wav in folder.glob("*.wav"):
+                    wav.unlink()
+                logger.info(f"deleted audio for {old}, kept its tallies")
+
+    log.event("nightly_done", day=str(when), findings=len(findings), cards=added)
+    print(f"\n  {len(findings)} findings, {added} new reminder cards")
+    for kind, path in written.items():
+        print(f"  {kind}: {path}")
+    return 0
+
+
+def cmd_morning(args: argparse.Namespace) -> int:
+    from datetime import date as _date, timedelta
+
+    from . import log, remind, report
+
+    yesterday = _date.today() - timedelta(days=1)
+    with log.step("morning"):
+        path = report.open_report(yesterday) or report.open_report(_date.today())
+        result = remind.run()
+    if path:
+        print(f"  opened {path}")
+    else:
+        print("  no report to open yet")
+    print(f"  reminders: {result}")
+    return 0
+
+
+def cmd_logs(args: argparse.Namespace) -> int:
+    from . import log
+
+    print(f"  health: {log.health()}")
+    print()
+    print(log.tail(args.lines))
+    return 0
+
+
 def cmd_look(args: argparse.Namespace) -> int:
     for word in args.words:
         entry = dictionary.lookup(word, refresh=args.refresh)
@@ -431,6 +522,23 @@ def build_parser() -> argparse.ArgumentParser:
     look.add_argument("words", nargs="+")
     look.add_argument("--refresh", action="store_true", help="ignore the cache")
     look.set_defaults(func=cmd_look)
+
+    listen_cmd = sub.add_parser("listen", help="start listening, context-aware")
+    listen_cmd.add_argument("--seconds", type=float, default=None, help="stop after N seconds")
+    listen_cmd.add_argument("--raw", action="store_true", help="skip Apple voice processing")
+    listen_cmd.set_defaults(func=cmd_listen)
+
+    day_cmd = sub.add_parser("analyse-day", help="the 23:30 job")
+    day_cmd.add_argument("--day", help="YYYY-MM-DD, defaults to today")
+    day_cmd.add_argument("--force", action="store_true", help="run even on battery")
+    day_cmd.set_defaults(func=cmd_analyse_day)
+
+    morning_cmd = sub.add_parser("morning", help="the 08:30 job")
+    morning_cmd.set_defaults(func=cmd_morning)
+
+    logs_cmd = sub.add_parser("logs", help="what the scheduled jobs did")
+    logs_cmd.add_argument("--lines", type=int, default=30)
+    logs_cmd.set_defaults(func=cmd_logs)
 
     probe_cmd = sub.add_parser("probe", help="record the 20 sentences that test if he works")
     probe_cmd.add_argument("--redo", action="store_true", help="re-record everything")

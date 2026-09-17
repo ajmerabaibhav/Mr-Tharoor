@@ -94,6 +94,26 @@ MEDIA_APPS = frozenset(
     }
 )
 
+# Holding the microphone without it meaning a conversation.
+#
+# com.apple.CoreSpeech is Apple's speech service. Wispr Flow, Siri and system
+# dictation all go through it, and MEASURED over several hours it keeps the
+# microphone open the entire time -- same pid, never released. Treating that
+# as "a call is happening" would hold the gate open all day and destroy the
+# one property this design exists for.
+#
+# So it downgrades to SAMPLE instead: peek occasionally, and let voice
+# activity decide. A real dictation session has speech in it and gets
+# recorded; an idle service does not and costs one peek every few seconds.
+AMBIGUOUS_HOLDERS = frozenset(
+    {
+        "com.apple.CoreSpeech",
+        "com.apple.Siri",
+        "com.apple.assistantd",
+        "com.apple.SpeechRecognitionCore",
+    }
+)
+
 LISTEN_NEVER = "never"  # nothing to hear, stay asleep
 LISTEN_ALWAYS = "always"  # a conversation is happening, record it
 LISTEN_SAMPLE = "sample"  # might be reading aloud, peek occasionally
@@ -139,14 +159,23 @@ def playing_media(front: str | None = None) -> str | None:
 def decide() -> Decision:
     """The whole policy, in the order that costs least."""
     holders = micgate.mic_users()
-    if holders:
+    real = [h for h in holders if (h.bundle_id or "") not in AMBIGUOUS_HOLDERS]
+    if real:
         return Decision(
             LISTEN_ALWAYS,
-            f"{holders[0].bundle_id or 'an app'} is using the microphone",
+            f"{real[0].bundle_id or 'an app'} is using the microphone",
             frontmost(),
         )
 
     front = frontmost()
+    if holders:
+        # Only a system speech service has it. That means dictation might be
+        # happening, or nothing at all. Peek rather than assume.
+        return Decision(
+            LISTEN_SAMPLE,
+            f"{holders[0].bundle_id} has the mic, which may just be standby",
+            front,
+        )
     if front in CALL_APPS:
         return Decision(LISTEN_ALWAYS, "a call app is in front", front)
 
