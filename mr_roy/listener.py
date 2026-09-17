@@ -208,7 +208,17 @@ class Listener:
         return self.stats
 
 
+# Chunks are named HHMMSS.wav. Anything else in the folder is not a recording.
+_CHUNK = __import__("re").compile(r"^\d{6}\.wav$")
+
+
 def todays_audio(day: date | None = None) -> list[Path]:
-    """Every chunk recorded on a day, oldest first."""
+    """Every completed chunk recorded on a day, oldest first.
+
+    Matches the naming pattern rather than globbing *.wav, so a scratch file
+    or a half-written stray is never handed to the analyser as speech.
+    """
     folder = config.DATA_DIR / "sessions" / (day or date.today()).isoformat()
-    return sorted(folder.glob("*.wav")) if folder.exists() else []
+    if not folder.exists():
+        return []
+    return sorted(p for p in folder.iterdir() if _CHUNK.match(p.name))

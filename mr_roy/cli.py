@@ -5,6 +5,7 @@
     roy look comfortable          IPA and source, no sound
     roy check                     judge his flags, so we learn if he is right
     roy score                     how accurate he has actually been
+    roy setup                     one command: check, permit, download, schedule
     roy listen                    start listening (context-aware, all day)
     roy analyse-day               the 23:30 job: score today, build the report
     roy morning                   the 08:30 job: open it, send reminders
@@ -366,6 +367,108 @@ def cmd_remind(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_setup(args: argparse.Namespace) -> int:
+    """Everything a fresh clone needs, in the order it needs it.
+
+    Written because the alternative is a README a person follows wrongly.
+    Each step says what it is doing and what it costs, and a failure names
+    the fix rather than a traceback.
+    """
+    import platform
+    import shutil
+
+    from . import schedule
+
+    problems = []
+    print("Mr Roy setup\n")
+
+    print("  1. this machine")
+    if platform.system() != "Darwin":
+        print(f"     {platform.system()} is not supported. macOS only, for now.")
+        return 1
+    version = platform.mac_ver()[0]
+    print(f"     macOS {version} on {platform.machine()}  ok")
+
+    print("\n  2. libraries")
+    required = {
+        "numpy": "numpy", "soundfile": "soundfile", "sounddevice": "sounddevice",
+        "cmudict": "cmudict", "torch": "torch", "transformers": "transformers",
+        "faster_whisper": "faster-whisper", "AVFoundation": "pyobjc-framework-AVFoundation",
+        "AppKit": "pyobjc-framework-Cocoa",
+    }
+    missing = []
+    for module, package in required.items():
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(package)
+    if missing:
+        print(f"     missing: {', '.join(missing)}")
+        print(f"     fix: pip install {' '.join(missing)}")
+        problems.append("libraries")
+    else:
+        print(f"     all {len(required)} present  ok")
+
+    if problems:
+        print("\n  Stopping here. Install the libraries above and run `roy setup` again.")
+        return 1
+
+    print("\n  3. microphone permission")
+    print("     recording half a second. macOS will ask once, say yes.")
+    try:
+        from . import capture
+
+        info = capture.record(0.6, str(config.DATA_DIR / ".setup-check.wav"))
+        (config.DATA_DIR / ".setup-check.wav").unlink(missing_ok=True)
+        if info["peak"] == 0:
+            print("     got silence. Grant access in System Settings > Privacy > Microphone.")
+            problems.append("microphone")
+        else:
+            vp = "with Apple voice processing" if info["voice_processing"] else "raw"
+            print(f"     captured {info['channels']} channel(s) {vp}  ok")
+    except Exception as exc:
+        print(f"     failed: {type(exc).__name__}: {exc}")
+        print("     grant access in System Settings > Privacy & Security > Microphone")
+        problems.append("microphone")
+
+    print("\n  4. models (about 3 GB, downloaded once, then offline forever)")
+    if args.skip_models:
+        print("     skipped. They download on first use instead.")
+    else:
+        from . import listen
+
+        try:
+            print("     phoneme recogniser...", end=" ", flush=True)
+            listen._model()
+            print("ok")
+            print("     speech recogniser...", end=" ", flush=True)
+            listen._whisper()
+            print("ok")
+        except Exception as exc:
+            print(f"failed: {type(exc).__name__}: {exc}")
+            print("     they will retry on first use; check your connection")
+            problems.append("models")
+
+    print("\n  5. schedule")
+    for line in schedule.install():
+        print(f"     {line}")
+
+    print("\n" + ("-" * 58))
+    if problems:
+        print(f"  Set up with problems: {', '.join(problems)}")
+        print("  Fix those and run `roy setup` again.")
+        return 1
+    print("  Ready. Mr Roy is listening now and starts on every login.")
+    print()
+    print("  Talk normally. At 23:30 he analyses the day, at 08:30 the report")
+    print("  opens by itself. Nothing leaves this machine.")
+    print()
+    print("  roy gate     is he listening right now, and why")
+    print("  roy mictest  find your best microphone setup")
+    print("  roy logs     what the scheduled jobs did")
+    return 0
+
+
 def cmd_listen(args: argparse.Namespace) -> int:
     from . import listener
 
@@ -527,6 +630,11 @@ def build_parser() -> argparse.ArgumentParser:
     look.add_argument("words", nargs="+")
     look.add_argument("--refresh", action="store_true", help="ignore the cache")
     look.set_defaults(func=cmd_look)
+
+    setup_cmd = sub.add_parser("setup", help="one command to get running")
+    setup_cmd.add_argument("--skip-models", action="store_true",
+                           help="do not pre-download the 3GB of models")
+    setup_cmd.set_defaults(func=cmd_setup)
 
     listen_cmd = sub.add_parser("listen", help="start listening, context-aware")
     listen_cmd.add_argument("--seconds", type=float, default=None, help="stop after N seconds")

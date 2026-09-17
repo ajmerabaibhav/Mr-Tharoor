@@ -440,7 +440,9 @@ def audio_quality(wav_path: str) -> dict:
     )
     energies = energies[energies > 0]
     if energies.size == 0:
-        return {"snr_db": 0.0, "rms_db": -99.0, "usable": False,
+        # Every key every caller expects. Omitting "weight" here meant one
+        # empty recording crashed the whole nightly job with a KeyError.
+        return {"snr_db": 0.0, "rms_db": -99.0, "usable": False, "weight": 0.0,
                 "advice": "silent recording: wrong microphone, or it was muted"}
 
     noise = float(np.percentile(energies, 10))

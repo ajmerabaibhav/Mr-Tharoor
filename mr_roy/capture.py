@@ -39,6 +39,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from . import config
+
 TARGET_RATE = 16000  # what the phoneme model and the ASR both want
 
 
@@ -101,7 +103,18 @@ def record(seconds: float, destination: str, voice_processing: bool = True) -> d
     # Write at the hardware rate through AVAudioFile, which handles the
     # buffer plumbing, then resample once in numpy. Writing 48k buffers into
     # a 16k file does not resample, it corrupts.
-    raw_path = str(Path(destination).with_suffix(".raw48.wav"))
+    # NOT next to the destination. This is a scratch file at the hardware
+    # rate, and writing it as "<name>.raw48.wav" inside the session folder
+    # meant an interrupted recording left a 13 MB stray that the nightly job
+    # then tried to analyse as speech.
+    import tempfile
+
+    scratch_dir = config.DATA_DIR / "scratch"
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    handle, raw_path = tempfile.mkstemp(suffix=".wav", dir=str(scratch_dir))
+    import os as _os
+
+    _os.close(handle)
     # Take the settings from the node's own format. Writing a three-channel
     # buffer into a file declared as mono fails on every write, and because a
     # dropped buffer must not crash a recording, it fails silently: you get a
@@ -129,10 +142,19 @@ def record(seconds: float, destination: str, voice_processing: bool = True) -> d
 
     try:
         time.sleep(seconds)
-    finally:
+    except BaseException:
         node.removeTapOnBus_(0)
         engine.stop()
-        del audio_file  # flush and close before reading it back
+        del audio_file
+        Path(raw_path).unlink(missing_ok=True)  # never leave scratch behind
+        raise
+    finally:
+        try:
+            node.removeTapOnBus_(0)
+            engine.stop()
+            del audio_file  # flush and close before reading it back
+        except Exception:
+            pass
 
     if failures["count"]:
         print(f"mr-roy: {failures['count']} buffers failed to write")

@@ -19,12 +19,19 @@ of a word the first time it gets flagged.
 git clone https://github.com/ajmerabaibhav/Mr-Roy-.git mr-roy
 cd mr-roy
 pip install -e .
-pip install torch transformers faster-whisper cmudict pyobjc-framework-AVFoundation
-roy install          # two launchd agents. no sudo.
+roy setup
 ```
 
-About 3 GB of models download on first use: a phoneme recogniser (2.4 GB) and
-Whisper small.en (464 MB). macOS will ask for microphone permission once.
+`roy setup` does the rest: checks the machine, verifies every library, asks
+macOS for microphone permission (say yes), downloads the two models, and
+installs three launchd agents. It names the fix for anything that fails rather
+than printing a traceback.
+
+About 3 GB downloads once: a phoneme recogniser (2.4 GB) and Whisper small.en
+(464 MB). After that it runs offline. Nothing needs sudo, nothing installs
+outside your home directory.
+
+Then talk normally. That is the whole thing.
 
 ## Use
 

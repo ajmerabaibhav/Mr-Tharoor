@@ -10,8 +10,10 @@ and nothing needs a daemon sitting awake.
 
 Three agents, deliberately separate so one failing never takes the others out:
 
-    com.mrroy.listen    at login, stays resident, sleeps until the mic gate
-                        opens. ~9 seconds of CPU across a 14 hour day.
+    com.mrroy.listen    at login, stays resident, sleeps until there is
+                        something to hear. ~9 seconds of CPU across a 14 hour
+                        day. Restarted if it dies, throttled so a crash loop
+                        cannot spin the CPU.
     com.mrroy.nightly   23:30, analyses the day. Skips itself on battery, so
                         it never wakes up and drains a laptop in a bag.
     com.mrroy.morning   08:30, opens the report and sends the day's reminders.
@@ -35,6 +37,12 @@ AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
 LOG_DIR = config.ROOT / "logs"
 
 JOBS = {
+    "com.mrroy.listen": {
+        "args": ["listen"],
+        "resident": True,  # starts at login and stays up
+        "battery_safe": True,  # 8.3 seconds of CPU across a whole day
+        "what": "listen, context-aware, all day",
+    },
     "com.mrroy.nightly": {
         "args": ["analyse-day"],
         "hour": 23,
@@ -63,15 +71,29 @@ def _roy() -> str:
 def plist_for(label: str, job: dict) -> dict:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     command = _roy().split() + list(job["args"])
+    schedule: dict = {}
+    if job.get("resident"):
+        # Starts at login and is restarted if it dies. KeepAlive is scoped to
+        # abnormal exit so that `roy install --remove` and a clean Ctrl-C are
+        # respected rather than fought; ThrottleInterval stops a crash loop
+        # from spinning the CPU.
+        schedule["RunAtLoad"] = True
+        schedule["KeepAlive"] = {"SuccessfulExit": False}
+        schedule["ThrottleInterval"] = 60
+    else:
+        # A missed calendar event is not dropped: launchd runs it at the next
+        # wake. That is the whole reason this is not cron.
+        schedule["RunAtLoad"] = False
+        schedule["StartCalendarInterval"] = {
+            "Hour": job["hour"],
+            "Minute": job["minute"],
+        }
     return {
         "Label": label,
         "ProgramArguments": command,
-        # A missed calendar event is not dropped: launchd runs it at the next
-        # wake. That is the whole reason this is not cron.
-        "StartCalendarInterval": {"Hour": job["hour"], "Minute": job["minute"]},
+        **schedule,
         "StandardOutPath": str(LOG_DIR / f"{label}.log"),
         "StandardErrorPath": str(LOG_DIR / f"{label}.err"),
-        "RunAtLoad": False,
         "LowPriorityIO": True,
         "Nice": 5,  # never compete with whatever you are actually doing
         "ProcessType": "Background",
@@ -93,7 +115,8 @@ def install(dry_run: bool = False) -> list[str]:
         subprocess.run(["launchctl", "unload", str(path)], capture_output=True)
         result = subprocess.run(["launchctl", "load", str(path)], capture_output=True)
         state = "loaded" if result.returncode == 0 else result.stderr.decode().strip()
-        written.append(f"{label}  {job['hour']:02d}:{job['minute']:02d}  {state}")
+        when = "at login" if job.get("resident") else f"{job['hour']:02d}:{job['minute']:02d}"
+        written.append(f"{label:<20} {when:<9} {state}")
     return written
 
 
@@ -115,10 +138,8 @@ def status() -> list[str]:
         path = AGENTS_DIR / f"{label}.plist"
         installed = "installed" if path.exists() else "not installed"
         running = "loaded" if label in listing else "not loaded"
-        out.append(
-            f"{label:<20} {job['hour']:02d}:{job['minute']:02d}  {installed}, {running}"
-            f"   ({job['what']})"
-        )
+        when = "at login" if job.get("resident") else f"{job['hour']:02d}:{job['minute']:02d}"
+        out.append(f"{label:<20} {when:<9} {installed}, {running}   ({job['what']})")
     return out
 
 
