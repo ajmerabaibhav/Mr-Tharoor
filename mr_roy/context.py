@@ -94,17 +94,22 @@ MEDIA_APPS = frozenset(
     }
 )
 
-# Holding the microphone without it meaning a conversation.
+# Holding the microphone without it necessarily meaning a conversation.
 #
 # com.apple.CoreSpeech is Apple's speech service. Wispr Flow, Siri and system
-# dictation all go through it, and MEASURED over several hours it keeps the
-# microphone open the entire time -- same pid, never released. Treating that
-# as "a call is happening" would hold the gate open all day and destroy the
-# one property this design exists for.
+# dictation all capture through it, so none of them ever appears here under
+# its own name -- you see CoreSpeech or you see nothing.
 #
-# So it downgrades to SAMPLE instead: peek occasionally, and let voice
-# activity decide. A real dictation session has speech in it and gets
-# recorded; an idle service does not and costs one peek every few seconds.
+# MEASURED: it does NOT hold the microphone permanently. It appears while
+# something is actively listening and releases afterwards. (An earlier note
+# here claimed otherwise, from seeing the same long-lived pid twice hours
+# apart; the daemon is long-lived, its grip on the microphone is not.)
+#
+# It still downgrades to SAMPLE rather than ALWAYS, for a different and
+# smaller reason: we cannot tell dictation from a Siri prompt or a wake-word
+# check, and recording a 30 second chunk because someone said "Hey Siri"
+# wastes battery on silence. Peeking first costs one half-second and lets
+# voice activity settle it.
 AMBIGUOUS_HOLDERS = frozenset(
     {
         "com.apple.CoreSpeech",
