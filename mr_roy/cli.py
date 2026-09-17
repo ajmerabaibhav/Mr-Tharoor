@@ -409,8 +409,13 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
         for index, chunk in enumerate(chunks, 1):
             quality = listen.audio_quality(str(chunk))
             if not quality["usable"]:
-                logger.info(f"skip {chunk.name}: SNR {quality['snr_db']}dB too low")
+                logger.info(f"skip {chunk.name}: SNR {quality['snr_db']}dB is room tone")
                 continue
+            if quality["weight"] < 1.0:
+                logger.info(
+                    f"{chunk.name}: SNR {quality['snr_db']}dB, "
+                    f"findings weighted {quality['weight']:.0%}"
+                )
             for segment in listen.transcribe(str(chunk)):
                 findings += daily.findings_for(
                     str(chunk), segment["text"], f"{chunk.stem}-{int(segment['start'])}"

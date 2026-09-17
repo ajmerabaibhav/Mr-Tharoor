@@ -119,6 +119,23 @@ AMBIGUOUS_HOLDERS = frozenset(
     }
 )
 
+# Dictation apps. None of them ever holds the microphone under its own name:
+# they all capture through CoreSpeech. But if one of them is RUNNING and
+# CoreSpeech has the microphone, it is that app dictating rather than a Siri
+# wake-word check, and dictation is the cleanest speech this tool ever gets --
+# one speaker, close to the mic, talking deliberately. So record it outright
+# instead of spending half a second deciding whether to.
+DICTATION_APPS = frozenset(
+    {
+        "com.electron.wispr-flow",
+        "com.superwhisper",
+        "com.openai.chat",
+        "app.flowvoice",
+        "com.aqua.voice",
+        "com.goodsnooze.macwhisper",
+    }
+)
+
 LISTEN_NEVER = "never"  # nothing to hear, stay asleep
 LISTEN_ALWAYS = "always"  # a conversation is happening, record it
 LISTEN_SAMPLE = "sample"  # might be reading aloud, peek occasionally
@@ -133,6 +150,35 @@ class Decision:
     @property
     def listening(self) -> bool:
         return self.mode != LISTEN_NEVER
+
+
+def running_apps() -> set[str]:
+    """Bundle ids of everything with a UI. About a third of a millisecond."""
+    try:
+        from AppKit import NSWorkspace
+
+        return {
+            app.bundleIdentifier()
+            for app in NSWorkspace.sharedWorkspace().runningApplications()
+            if app.bundleIdentifier()
+        }
+    except Exception:
+        return set()
+
+
+def dictating() -> str | None:
+    """Is a dictation app the reason the microphone is open?
+
+    Wispr Flow shows an orange mic while it listens, and that is exactly the
+    moment worth recording. It never appears as the microphone holder itself,
+    so the test is: a system speech service has the mic, AND a dictation app
+    is running. Siri alone satisfies the first and not the second.
+    """
+    holders = {h.bundle_id or "" for h in micgate.mic_users()}
+    if not holders & AMBIGUOUS_HOLDERS:
+        return None
+    present = running_apps() & DICTATION_APPS
+    return sorted(present)[0] if present else None
 
 
 def frontmost() -> str | None:
@@ -174,11 +220,14 @@ def decide() -> Decision:
 
     front = frontmost()
     if holders:
-        # Only a system speech service has it. That means dictation might be
-        # happening, or nothing at all. Peek rather than assume.
+        app = dictating()
+        if app:
+            # The orange mic is on. This is you talking, deliberately, close
+            # to the microphone: the best audio this tool will ever get.
+            return Decision(LISTEN_ALWAYS, f"you are dictating into {app}", front)
         return Decision(
             LISTEN_SAMPLE,
-            f"{holders[0].bundle_id} has the mic, which may just be standby",
+            f"{holders[0].bundle_id} has the mic, which may just be Siri",
             front,
         )
     if front in CALL_APPS:

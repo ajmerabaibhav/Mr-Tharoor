@@ -53,6 +53,20 @@ class Finding:
     clip_path: str | None = None  # you, saying it
     correct_path: str | None = None  # a human, saying it properly
     ipa: str | None = None
+    quality: float = 1.0  # how clean the audio was, 0 to 1
+
+    @property
+    def evidence_weight(self) -> float:
+        """What this finding is worth when tallies are accumulated.
+
+        Kept separate from `confidence` on purpose. Confidence answers "is the
+        model sure about the sound it heard"; quality answers "how much should
+        a finding from audio this noisy count". Folding them together and then
+        testing the product against a fixed threshold made noisy days
+        mathematically incapable of producing any finding at all -- one cliff
+        traded for another.
+        """
+        return self.confidence * self.quality
 
     @property
     def headline(self) -> str:
@@ -92,8 +106,15 @@ def to_m4a(wav_path: str) -> str | None:
 def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
     """Every scored mistake in one recording, with both clips cut."""
     result = listen.analyse(wav_path, text)
+    # Noisy audio does not get thrown away, it gets discounted. The pooling in
+    # evidence.py already knows how to accumulate weak evidence; what it cannot
+    # do is recover evidence a gate deleted.
+    quality_weight = result["quality"].get("weight", 1.0)
     out: list[Finding] = []
     for index, diff in enumerate(result["scored"]):
+        # The gate is on the DETECTOR's confidence alone. Noise is accounted
+        # for downstream as evidence weight, where it can accumulate instead
+        # of disqualifying the whole day.
         if diff.confidence < MIN_CONFIDENCE or not diff.word:
             continue
         clip = _cut(
@@ -115,6 +136,7 @@ def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
                 clip_path=clip,
                 correct_path=pronunciation.audio_path,
                 ipa=pronunciation.ipa,
+                quality=quality_weight,
             )
         )
     return out

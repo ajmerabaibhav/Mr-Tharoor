@@ -397,12 +397,30 @@ def heard(wav_path: str, enhance: bool = True) -> list[Token]:
     return tokens
 
 
-# Below this, the model produces confident nonsense rather than admitting it
-# cannot hear. Measured on this machine: clean reference recordings sit near
-# 37 dB and score 83%; a first pass recorded at arm's length sat at 12 dB and
-# scored 32%. The sounds that vanish first are the fricatives, which is most
-# of what we are trying to measure.
-MIN_SNR_DB = 18.0
+# A hard floor, not a quality bar. Below this the model transcribes room tone
+# into phonemes and there is nothing to salvage.
+#
+# This was 18 dB, set by looking at clean reference recordings that sit near
+# 37 dB. Real recordings from this machine sit at 12 dB, so the gate rejected
+# every single one and the nightly job produced nothing at all, silently. A
+# threshold calibrated on the easy case is worse than no threshold.
+#
+# Quality is handled the way confidence already is: as a weight rather than a
+# cliff. A 12 dB recording still found real v -> w substitutions; it just
+# deserves to count for less than a 30 dB one.
+MIN_SNR_DB = 6.0
+
+# Where audio stops costing us anything. Above this, full weight.
+GOOD_SNR_DB = 25.0
+
+
+def snr_weight(snr_db: float) -> float:
+    """How much to trust a finding from audio this clean. 0 to 1."""
+    if snr_db >= GOOD_SNR_DB:
+        return 1.0
+    if snr_db <= MIN_SNR_DB:
+        return 0.0
+    return round((snr_db - MIN_SNR_DB) / (GOOD_SNR_DB - MIN_SNR_DB), 3)
 
 
 def audio_quality(wav_path: str) -> dict:
@@ -432,12 +450,14 @@ def audio_quality(wav_path: str) -> dict:
 
     advice = ""
     if snr < MIN_SNR_DB:
+        advice = f"SNR {snr:.0f} dB is room tone, not speech. Nothing to analyse."
+    elif snr < GOOD_SNR_DB:
         advice = (
-            f"SNR {snr:.0f} dB is too low to judge fricatives. Speak closer to "
-            f"the microphone (a hand-span, not arm's length), somewhere quiet."
+            f"SNR {snr:.0f} dB. Usable, but findings count for "
+            f"{snr_weight(snr):.0%}. Speak closer to the mic for full weight."
         )
     return {"snr_db": round(snr, 1), "rms_db": round(rms, 1),
-            "usable": snr >= MIN_SNR_DB, "advice": advice}
+            "usable": snr >= MIN_SNR_DB, "weight": snr_weight(snr), "advice": advice}
 
 
 @lru_cache(maxsize=1)
