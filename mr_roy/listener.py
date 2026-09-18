@@ -168,8 +168,27 @@ Uses sounddevice, not AVAudioEngine, and never touches the voice path.
             sd.wait()
             return has_speech(audio[:, 0])
         except Exception as exc:
-            self.logger.warning(f"peek failed: {type(exc).__name__}: {exc}")
-            return False
+            # PortAudio occasionally refuses the device for a moment (error
+            # -9986) when another app is grabbing or releasing it. Seen in
+            # production, intermittently, with no pattern. Fall back to the
+            # heavier raw AVAudioEngine path for this one peek rather than
+            # silently deciding nobody is talking.
+            self.logger.warning(f"peek via sounddevice failed ({type(exc).__name__}), using raw engine")
+            import soundfile as sf
+
+            from . import capture
+
+            scratch = str(config.DATA_DIR / ".peek.wav")
+            try:
+                capture.record(PEEK_SECONDS, scratch, voice_processing=False)
+                audio, _ = sf.read(scratch, dtype="float32")
+                return has_speech(audio if audio.ndim == 1 else audio[:, 0])
+            except Exception as exc2:  # noqa: BLE001
+                self.logger.warning(f"peek failed on both paths: {type(exc2).__name__}: {exc2}")
+                time.sleep(PEEK_EVERY)  # back off; do not hammer a device that is refusing us
+                return False
+            finally:
+                Path(scratch).unlink(missing_ok=True)
 
     def _capture_chunk(self, reason: str, voice: bool = True) -> bool:
         """Record one chunk. Returns whether it held speech and was kept."""
