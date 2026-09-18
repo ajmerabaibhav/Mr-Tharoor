@@ -60,7 +60,26 @@ def _audio_tag(path: str | None, label: str, css: str) -> str:
     )
 
 
-def build_html(findings: list, day: date) -> str:
+def _grammar_html(habits: list[dict]) -> str:
+    if not habits:
+        return ""
+    items = "".join(
+        f'<div class="ab"><div class="who">'
+        f'<div class="word">you said &ldquo;{html.escape(h["said"])}&rdquo;</div>'
+        f'<div class="fix">it should be &ldquo;<b>{html.escape(h["should_be"])}</b>&rdquo;'
+        f'<span class="kind">{html.escape(h["kind"])} &middot; {h["times"]}x</span></div>'
+        f'<div class="ctx">&ldquo;{html.escape(h["context"][:120])}&rdquo;</div>'
+        f"</div></div>"
+        for h in habits
+    )
+    return (
+        '<h2 class="sect">Phrasing</h2>'
+        '<div class="sub2">What you said into Wispr Flow, against what you meant. Habits, not slips: each of these came up more than once.</div>'
+        f'<div class="card">{items}</div>'
+    )
+
+
+def build_html(findings: list, day: date, grammar: list[dict] | None = None) -> str:
     grouped = daily.group(findings)
     total = len(findings)
     rows = []
@@ -102,17 +121,23 @@ def build_html(findings: list, day: date) -> str:
         '<div class="card"><div class="card-head"><div class="words">'
         "Nothing flagged. Either a clean day or a quiet one.</div></div></div>"
     )
-    return TEMPLATE.replace("{{DATE}}", day.strftime("%A %d %B %Y")).replace(
-        "{{TOTAL}}", str(total)
-    ).replace("{{SOUNDS}}", str(len(grouped))).replace("{{CARDS}}", body)
+    greeting = f"Good morning, {config.user_name()}."
+    return (
+        TEMPLATE.replace("{{GREETING}}", html.escape(greeting))
+        .replace("{{DATE}}", day.strftime("%A %d %B %Y"))
+        .replace("{{TOTAL}}", str(total))
+        .replace("{{SOUNDS}}", str(len(grouped)))
+        .replace("{{CARDS}}", body)
+        .replace("{{GRAMMAR}}", _grammar_html(grammar or []))
+    )
 
 
-def write(findings: list, day: date | None = None) -> dict[str, str]:
+def write(findings: list, day: date | None = None, grammar: list[dict] | None = None) -> dict[str, str]:
     """HTML always; PDF and Word when their tools are present."""
     day = day or date.today()
     config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     html_path = config.REPORTS_DIR / f"{day.isoformat()}.html"
-    html_path.write_text(build_html(findings, day), encoding="utf-8")
+    html_path.write_text(build_html(findings, day, grammar), encoding="utf-8")
     out = {"html": str(html_path)}
 
     if CHROMIUM.exists():
@@ -154,6 +179,11 @@ TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
 font:16px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
 .wrap{max-width:760px;margin:0 auto}h1{font-size:2rem;margin:0 0 4px;letter-spacing:-.02em}
 .sub{color:var(--muted);font-size:.88rem;margin-bottom:24px}
+.greet{font-family:-apple-system,"Helvetica Neue",sans-serif;font-size:1.05rem;color:var(--accent);font-weight:600;margin-bottom:6px}
+.sect{font-size:1.15rem;margin:26px 0 10px;letter-spacing:-.01em}
+.sub2{color:var(--muted);font-size:.84rem;margin:-6px 0 12px}
+.fix{font-size:.95rem;color:var(--ink2);margin-top:2px}.fix b{color:var(--accent)}
+.kind{font-size:.7rem;color:var(--muted);margin-left:10px;text-transform:uppercase;letter-spacing:.06em}
 .card{background:var(--surface);border:1px solid var(--rule);margin-bottom:12px;overflow:hidden}
 .card-head{padding:14px 16px;border-bottom:1px solid var(--rule)}
 .swap{font-size:1.25rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -173,9 +203,12 @@ font:inherit;font-size:.8rem;cursor:pointer;color:var(--ink2)}
 @media(max-width:620px){.ab{grid-template-columns:1fr}.buttons{justify-content:flex-start}}
 @media print{.pb{display:none}.card{break-inside:avoid}}
 </style></head><body><div class="wrap">
+<div class="greet">{{GREETING}}</div>
 <h1>What I heard you say</h1>
 <div class="sub">{{DATE}} &middot; {{TOTAL}} mistakes across {{SOUNDS}} sounds &middot; press a button to hear it</div>
+<h2 class="sect">Pronunciation</h2>
 {{CARDS}}
+{{GRAMMAR}}
 </div><script>
 var playing=null;
 document.addEventListener('click',function(e){

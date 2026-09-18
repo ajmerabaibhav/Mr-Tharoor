@@ -73,15 +73,23 @@ class Finding:
         return f"{self.word}: you said /{self.said}/, it is /{self.should_be}/"
 
 
-def _cut(source_wav: str, second: float, destination: Path) -> str | None:
-    """Cut the moment out of the recording, enhanced so it is audible."""
-    import numpy as np
+def _load_enhanced(source_wav: str):
+    """Read and enhance a recording ONCE. Every clip is cut from this."""
     import soundfile as sf
 
     audio, rate = sf.read(source_wav, dtype="float32")
     if audio.ndim > 1:
         audio = audio.mean(axis=1)
-    audio = clean.enhance(audio, rate)
+    return clean.enhance(audio, rate), rate
+
+
+def _cut(audio, rate: int, second: float, destination: Path) -> str | None:
+    """Cut the moment out of an already-enhanced recording.
+
+    The earlier version re-read and re-filtered the whole 30 second chunk for
+    every single finding. Ten findings in a chunk meant ten full passes.
+    """
+    import soundfile as sf
 
     start = max(int((second - CLIP_PAD_BEFORE) * rate), 0)
     end = min(int((second + CLIP_PAD_AFTER) * rate), len(audio))
@@ -104,8 +112,15 @@ def to_m4a(wav_path: str) -> str | None:
 
 
 def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
-    """Every scored mistake in one recording, with both clips cut."""
+    """Every scored mistake in one recording, with your clip cut.
+
+    Does NOT fetch the correct pronunciation here. That is a network call per
+    new word, throttled to one a second, and a first night has hundreds of new
+    words -- it was the single biggest reason a 40 minute day never finished.
+    The report fetches audio only for the handful of words it actually shows.
+    """
     result = listen.analyse(wav_path, text)
+    enhanced, rate = _load_enhanced(wav_path)
     # Noisy audio does not get thrown away, it gets discounted. The pooling in
     # evidence.py already knows how to accumulate weak evidence; what it cannot
     # do is recover evidence a gate deleted.
@@ -118,11 +133,11 @@ def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
         if diff.confidence < MIN_CONFIDENCE or not diff.word:
             continue
         clip = _cut(
-            wav_path,
+            enhanced,
+            rate,
             diff.second,
             config.CLIPS_DIR / f"{label}-{index}-{diff.word}.wav",
         )
-        pronunciation = dictionary.lookup(diff.word)
         out.append(
             Finding(
                 word=diff.word,
@@ -134,12 +149,29 @@ def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
                 source=label,
                 sentence=text,
                 clip_path=clip,
-                correct_path=pronunciation.audio_path,
-                ipa=pronunciation.ipa,
+                correct_path=None,
+                ipa=None,
                 quality=quality_weight,
             )
         )
     return out
+
+
+def attach_pronunciations(findings: list[Finding], limit_words: int = 30) -> None:
+    """Fetch the correct audio for the words that will be shown, in place."""
+    words: list[str] = []
+    for f in findings:
+        if f.word not in words:
+            words.append(f.word)
+    fetched = {}
+    for word in words[:limit_words]:
+        entry = dictionary.lookup(word)
+        fetched[word] = entry
+    for f in findings:
+        entry = fetched.get(f.word)
+        if entry:
+            f.correct_path = entry.audio_path
+            f.ipa = entry.ipa
 
 
 def group(findings: list[Finding]) -> dict[str, list[Finding]]:

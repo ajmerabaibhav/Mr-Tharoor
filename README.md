@@ -1,7 +1,8 @@
 # Mr Roy
 
-A pronunciation coach that listens to how you actually talk, and each morning
-plays you the words you got wrong next to a recording of them said properly.
+A pronunciation and phrasing coach that listens to how you actually talk, and
+each morning greets you with the words you got wrong, your own voice next to a
+recording of them said properly, and the phrases you keep getting backwards.
 
 You cannot learn a sound by reading a symbol. `/ˈvɜːʒn̩/` teaches nobody
 anything. Hearing yourself say *wersion*, then hearing *version*, teaches it in
@@ -56,6 +57,29 @@ the report opens itself.
 | `roy install --remove` | stop all of it. Two files deleted. |
 
 ---
+
+## Where the speech comes from
+
+Two sources, best first.
+
+**Wispr Flow's own database.** If you dictate with Wispr Flow, every
+dictation is already stored on your Mac: the audio, what the recogniser heard,
+what the model decided you meant, and what you corrected by hand. That is the
+exact pair this tool needs, produced by a model that saw the whole sentence.
+Mr Roy reads it (read-only, through SQLite's backup API, never writing to it)
+and gets clean close-mic audio with reliable text for free. It is also where
+the **phrasing** section comes from: what you said against what you meant,
+filtered to the kinds of change a grammar teacher would mark, articles,
+prepositions, number, verb form, and Indian English fixed phrases like
+"revert back" and "discuss about". Fillers and style rewrites are discarded.
+
+The reader checks Wispr's schema before trusting anything and fails loudly
+if a release changes it.
+
+**Its own microphone**, for everything Wispr does not hear: a Google Meet, a
+WhatsApp call, reading aloud in Claude or ChatGPT. Words come from Whisper
+here, which is weaker than Wispr's text, so these findings count for a little
+less.
 
 ## How it decides to listen
 

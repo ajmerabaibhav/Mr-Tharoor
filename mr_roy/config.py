@@ -26,6 +26,20 @@ ACCENT_PREFERENCE = ("en-us", "en-uk", "en-au", "en-ca", "en")
 # macOS voice used only when no human recording exists for a word.
 FALLBACK_VOICE = "Samantha"
 
+
+def user_name() -> str:
+    """Who the morning report greets. Overridable, defaults to the Mac account."""
+    import subprocess
+
+    override = os.environ.get("MR_ROY_NAME")
+    if override:
+        return override
+    try:
+        full = subprocess.run(["id", "-F"], capture_output=True, text=True, timeout=2).stdout.strip()
+        return full.split()[0] if full else "there"
+    except Exception:  # noqa: BLE001
+        return "there"
+
 for _d in (AUDIO_DIR, CLIPS_DIR, REPORTS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 

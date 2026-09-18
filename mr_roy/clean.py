@@ -36,13 +36,23 @@ HOP = 128
 
 
 def _highpass(audio: np.ndarray, rate: int, cutoff: float = HIGHPASS_HZ) -> np.ndarray:
-    """One-pole high-pass. Removes rumble without needing scipy."""
+    """One-pole high-pass. Removes rumble.
+
+    Vectorised. The first version was a Python for-loop over every sample,
+    which on a 30 second chunk is 480,000 iterations, and it ran once per
+    finding. That alone was minutes of the nightly job.
+    """
     alpha = 1.0 / (1.0 + 2 * np.pi * cutoff / rate)
-    out = np.empty_like(audio)
-    out[0] = audio[0]
-    for i in range(1, len(audio)):
-        out[i] = alpha * (out[i - 1] + audio[i] - audio[i - 1])
-    return out
+    try:
+        from scipy.signal import lfilter
+
+        return lfilter([alpha, -alpha], [1.0, -alpha], audio).astype(audio.dtype)
+    except ImportError:  # pragma: no cover
+        out = np.empty_like(audio)
+        out[0] = audio[0]
+        for i in range(1, len(audio)):
+            out[i] = alpha * (out[i - 1] + audio[i] - audio[i - 1])
+        return out
 
 
 def denoise(audio: np.ndarray, over_subtract: float = 2.0, floor: float = 0.05) -> np.ndarray:

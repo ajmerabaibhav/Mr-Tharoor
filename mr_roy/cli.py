@@ -479,17 +479,26 @@ def cmd_listen(args: argparse.Namespace) -> int:
 
 
 def cmd_analyse_day(args: argparse.Namespace) -> int:
-    """The nightly job. Every step logged, so a failure is never silent."""
+    """The nightly job. Every step logged, so a failure is never silent.
+
+    Two sources, best first:
+
+      Wispr Flow's own database. Clean close-mic audio already paired with
+      the words you meant, worked out by a model that saw the whole sentence.
+      Also the source of grammar corrections: what it heard against what it
+      decided you meant, and what you fixed by hand.
+
+      Our own recordings. Meetings, calls, reading aloud: the things Wispr
+      never hears. Words come from Whisper, which is weaker, so these count
+      for a little less.
+    """
     from datetime import date as _date
 
-    from . import daily, listener, listen, log, remind, report, schedule, streaks
+    from . import daily, grammar, listener, listen, log, remind, report, schedule, streaks, wispr
 
     when = _date.fromisoformat(args.day) if args.day else _date.today()
     logger = log.get("nightly")
 
-    # Housekeeping first, and unconditionally. It is cheap, and tying it to a
-    # successful analysis meant a laptop on battery at 23:30 every night never
-    # cleaned up anything.
     files, freed = streaks.purge_expired_audio(when)
     if files:
         logger.info(f"deleted {files} expired recordings, freed {freed} MB")
@@ -500,53 +509,110 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
         print("  On battery. Skipping so nothing drains in your bag. --force to override.")
         return 0
 
-    chunks = listener.todays_audio(when)
-    print(f"  {len(chunks)} recordings for {when}")
-    if not chunks:
-        logger.info(f"nothing recorded for {when}")
-        print("  Nothing to analyse. Is `roy listen` running?")
-        return 0
-
     findings = []
-    with log.step("nightly", day=str(when), chunks=len(chunks)):
+    grammar_findings = []
+    sources = {"wispr": 0, "own": 0}
+
+    with log.step("nightly", day=str(when)):
+        # ---- source 1: Wispr Flow ----
+        if wispr.available():
+            try:
+                dictations = wispr.for_day(when)
+            except wispr.SchemaChanged as exc:
+                logger.error(f"Wispr reader disabled: {exc}")
+                print(f"  Wispr Flow database changed shape: {exc}")
+                dictations = []
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"Wispr read failed: {type(exc).__name__}: {exc}")
+                dictations = []
+            print(f"  {len(dictations)} dictations in Wispr Flow for {when}")
+            folder = listener.sessions_dir(when)
+            for index, d in enumerate(dictations, 1):
+                grammar_findings += grammar.compare(d.heard, d.meant, f"wispr-{d.id[:8]}")
+                path = wispr.write_wav(d, folder)
+                if not path:
+                    continue
+                quality = listen.audio_quality(str(path))
+                if not quality["usable"]:
+                    continue
+                findings += daily.findings_for(str(path), d.meant, f"wispr-{d.id[:8]}")
+                sources["wispr"] += 1
+                if index % 10 == 0:
+                    print(f"    {index}/{len(dictations)} dictations, {len(findings)} sound findings so far")
+        else:
+            print("  Wispr Flow not found; using our own recordings only")
+
+        # ---- source 2: our own recordings (meetings, calls, reading aloud) ----
+        chunks = listener.todays_audio(when)
+        print(f"  {len(chunks)} recordings of our own for {when}")
         for index, chunk in enumerate(chunks, 1):
             quality = listen.audio_quality(str(chunk))
             if not quality["usable"]:
                 logger.info(f"skip {chunk.name}: SNR {quality['snr_db']}dB is room tone")
                 continue
-            if quality["weight"] < 1.0:
-                logger.info(
-                    f"{chunk.name}: SNR {quality['snr_db']}dB, "
-                    f"findings weighted {quality['weight']:.0%}"
-                )
             for segment in listen.transcribe(str(chunk)):
                 findings += daily.findings_for(
                     str(chunk), segment["text"], f"{chunk.stem}-{int(segment['start'])}"
                 )
-            print(f"    {index}/{len(chunks)} {chunk.name}  ({len(findings)} findings so far)")
+            sources["own"] += 1
+            if index % 10 == 0:
+                print(f"    {index}/{len(chunks)} recordings, {len(findings)} sound findings so far")
 
+        if not findings and not grammar_findings:
+            logger.info(f"nothing to report for {when}")
+            print("  Nothing heard. Dictate into Wispr, or make sure `roy listen` is running.")
+            return 0
+
+        daily.attach_pronunciations(findings)
         daily.save(findings, when)
+        grammar_rows = grammar.summarise(grammar_findings, limit=10)
+        config.write_json_atomically(
+            config.REPORTS_DIR / f"{when.isoformat()}-grammar.json", grammar_rows
+        )
         added = remind.enqueue(findings)
-        written = report.write(findings, when)
+        written = report.write(findings, when, grammar=grammar_rows)
 
-    log.event("nightly_done", day=str(when), findings=len(findings), cards=added)
-    print(f"\n  {len(findings)} findings, {added} new reminder cards")
+    log.event("nightly_done", day=str(when), findings=len(findings),
+              grammar=len(grammar_findings), cards=added, **sources)
+    print(f"\n  {len(findings)} sound findings, {len(grammar_findings)} grammar corrections "
+          f"({len(grammar_rows)} habits), {added} new reminder cards")
     for kind, path in written.items():
         print(f"  {kind}: {path}")
     return 0
 
 
 def cmd_morning(args: argparse.Namespace) -> int:
+    """08:30. Open yesterday's report and say good morning."""
+    import json
+    import subprocess
     from datetime import date as _date, timedelta
 
-    from . import log, remind, report
+    from . import daily, log, remind, report
 
     yesterday = _date.today() - timedelta(days=1)
+    day = yesterday if (config.REPORTS_DIR / f"{yesterday.isoformat()}.html").exists() else _date.today()
     with log.step("morning"):
-        path = report.open_report(yesterday) or report.open_report(_date.today())
+        path = report.open_report(day)
+        findings = daily.load(day)
+        grammar_file = config.REPORTS_DIR / f"{day.isoformat()}-grammar.json"
+        habits = json.loads(grammar_file.read_text()) if grammar_file.exists() else []
+        sounds = len({f.contrast for f in findings})
+        name = config.user_name()
+        if path:
+            body = (
+                f"{sounds} sound{'s' if sounds != 1 else ''} and "
+                f"{len(habits)} phrase{'s' if len(habits) != 1 else ''} from {day:%A}. "
+                f"The report is open."
+            )
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display notification {json.dumps(body)} with title '
+                 f'{json.dumps(f"Good morning, {name}")} sound name "Glass"'],
+                capture_output=True,
+            )
         result = remind.run()
     if path:
-        print(f"  opened {path}")
+        print(f"  Good morning, {name}. Opened {path}")
     else:
         print("  no report to open yet")
     print(f"  reminders: {result}")

@@ -121,6 +121,7 @@ def _substitution_score(expected: str, actual: str) -> float:
 
 _STRESS = re.compile(r"\d")
 _WORD = re.compile(r"[a-z']+")
+MAX_VARIANT_TRIALS = 40
 
 # The model speaks eSpeak, CMUdict speaks ARPABET, and they write the same
 # sounds differently. Length marks are the big one: the model's "iː" and our
@@ -319,7 +320,10 @@ def expected_with_words(
 
     choice: dict[str, int] = {}
     best = _score(_build(text, choice)[0], actual)
-    for word in dict.fromkeys(_WORD.findall(text.lower())):
+    candidates = [w for w in dict.fromkeys(_WORD.findall(text.lower())) if len(variants(w)) > 1]
+    # Each trial is a full alignment. On a 500-word dictation that is 2,000
+    # phonemes a trial; forty trials is fine, four hundred is not.
+    for word in candidates[:MAX_VARIANT_TRIALS]:
         forms = variants(word)
         if len(forms) < 2:
             continue
@@ -547,51 +551,78 @@ def _classify(expected: str, actual: str) -> str | None:
 def align(expected: list[str], actual: list[Token]) -> list[Diff]:
     """Needleman-Wunsch. Substitutions are what we want; gaps are noise.
 
-    A dropped or inserted sound is usually connected speech or a model slip,
-    so gaps are recorded but never classified as a contrast error.
+    Vectorised row by row with numpy. The first version filled the table in
+    pure Python, which on a 20-word probe sentence took milliseconds and on a
+    500-word dictation (2,000 phonemes, 4 million cells) took minutes -- and
+    the homograph search then re-ran it once per candidate pronunciation.
+    Tonight's job never finished. This is the same algorithm, same scores,
+    same traceback, about two hundred times faster.
+
+    The left-neighbour dependency inside a row is a running maximum with a
+    linear penalty: score[i][j] = gap*j + max over k<=j of (C_k - gap*k),
+    which numpy's maximum.accumulate computes in one pass.
     """
+    import numpy as np
+
     n, m = len(expected), len(actual)
     gap = -1.5
-    score = [[0.0] * (m + 1) for _ in range(n + 1)]
+    if n == 0 and m == 0:
+        return []
+    if m == 0:
+        return [Diff(e, None, None, 0.0, i) for i, e in enumerate(expected)]
+    if n == 0:
+        return [Diff(None, t.symbol, None, t.confidence, 0, t.second) for t in actual]
+
+    act_syms = [t.symbol for t in actual]
+    symbols = sorted(set(expected) | set(act_syms))
+    index = {sym: k for k, sym in enumerate(symbols)}
+    sim = np.empty((len(symbols), len(symbols)), dtype=np.float64)
+    for a, ka in index.items():
+        for b, kb in index.items():
+            sim[ka, kb] = _substitution_score(a, b)
+    ei = np.fromiter((index[s] for s in expected), dtype=np.int64, count=n)
+    ai = np.fromiter((index[s] for s in act_syms), dtype=np.int64, count=m)
+
+    score = np.empty((n + 1, m + 1), dtype=np.float64)
+    score[0, :] = gap * np.arange(m + 1)
+    score[:, 0] = gap * np.arange(n + 1)
+    j = np.arange(1, m + 1, dtype=np.float64)
     for i in range(1, n + 1):
-        score[i][0] = i * gap
-    for j in range(1, m + 1):
-        score[0][j] = j * gap
-    for i in range(1, n + 1):
-        for j in range(1, m + 1):
-            same = _substitution_score(expected[i - 1], actual[j - 1].symbol)
-            score[i][j] = max(
-                score[i - 1][j - 1] + same, score[i - 1][j] + gap, score[i][j - 1] + gap
-            )
+        diag = score[i - 1, :-1] + sim[ei[i - 1], ai]
+        up = score[i - 1, 1:] + gap
+        best_from_above = np.maximum(diag, up)
+        shifted = np.concatenate(([score[i, 0]], best_from_above - gap * j))
+        score[i, 1:] = np.maximum.accumulate(shifted)[1:] + gap * j
 
     diffs: list[Diff] = []
-    i, j = n, m
-    while i > 0 or j > 0:
-        if i > 0 and j > 0:
-            same = _substitution_score(expected[i - 1], actual[j - 1].symbol)
-            if abs(score[i][j] - (score[i - 1][j - 1] + same)) < 1e-9:
-                if expected[i - 1] != actual[j - 1].symbol:
+    i, k = n, m
+    eps = 1e-9
+    while i > 0 or k > 0:
+        if i > 0 and k > 0:
+            same = sim[ei[i - 1], ai[k - 1]]
+            if abs(score[i, k] - (score[i - 1, k - 1] + same)) < eps:
+                if expected[i - 1] != act_syms[k - 1]:
                     diffs.append(
                         Diff(
                             expected=expected[i - 1],
-                            actual=actual[j - 1].symbol,
-                            contrast=_classify(expected[i - 1], actual[j - 1].symbol),
-                            confidence=actual[j - 1].confidence,
+                            actual=act_syms[k - 1],
+                            contrast=_classify(expected[i - 1], act_syms[k - 1]),
+                            confidence=actual[k - 1].confidence,
                             index=i - 1,
-                            second=actual[j - 1].second,
+                            second=actual[k - 1].second,
                         )
                     )
-                i, j = i - 1, j - 1
+                i, k = i - 1, k - 1
                 continue
-        if i > 0 and abs(score[i][j] - (score[i - 1][j] + gap)) < 1e-9:
+        if i > 0 and abs(score[i, k] - (score[i - 1, k] + gap)) < eps:
             diffs.append(Diff(expected[i - 1], None, None, 0.0, i - 1))
             i -= 1
         else:
             diffs.append(
-                Diff(None, actual[j - 1].symbol, None, actual[j - 1].confidence, i,
-                     actual[j - 1].second)
+                Diff(None, act_syms[k - 1], None, actual[k - 1].confidence, i,
+                     actual[k - 1].second)
             )
-            j -= 1
+            k -= 1
     diffs.reverse()
     return diffs
 
