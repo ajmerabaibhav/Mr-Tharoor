@@ -158,6 +158,35 @@ def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
 
 
 PRONUNCIATION_BUDGET_SECONDS = 90.0
+PRONUNCIATION_WORD_SECONDS = 20.0
+
+
+def _with_deadline(fn, seconds: float):
+    """Run fn in a thread; give up on it after `seconds`, whatever it is doing.
+
+    A socket timeout does not cover DNS resolution. On this network a
+    getaddrinfo call can hang indefinitely, and it did: the nightly job
+    finished every dictation, cut 430 clips, then sat at 0% CPU for eight
+    minutes inside one dictionary lookup, past a budget that could only be
+    checked between words. A stuck daemon thread is abandoned and dies with
+    the process; the job moves on and the word gets its audio tomorrow.
+    """
+    import threading
+
+    box: dict = {}
+
+    def run():
+        try:
+            box["value"] = fn()
+        except Exception as exc:  # noqa: BLE001
+            box["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        return None
+    return box.get("value")
 
 
 def attach_pronunciations(findings: list[Finding], limit_words: int = 30) -> None:
@@ -188,13 +217,22 @@ def attach_pronunciations(findings: list[Finding], limit_words: int = 30) -> Non
     skipped = 0
     for word in words:
         key = dictionary.cache_key(word)
-        if key not in cached_keys and time.monotonic() - started > PRONUNCIATION_BUDGET_SECONDS:
+        if key in cached_keys:
+            fetched[word] = dictionary.lookup(word)  # disk only, instant
+            continue
+        if time.monotonic() - started > PRONUNCIATION_BUDGET_SECONDS:
             skipped += 1
             continue
-        fetched[word] = dictionary.lookup(word)
+        entry = _with_deadline(lambda w=word: dictionary.lookup(w), PRONUNCIATION_WORD_SECONDS)
+        if entry is None:
+            skipped += 1
+            log.get("nightly").warning(f"pronunciation fetch for {word!r} abandoned after "
+                                       f"{PRONUNCIATION_WORD_SECONDS:.0f}s")
+            continue
+        fetched[word] = entry
     if skipped:
         log.get("nightly").warning(
-            f"pronunciation budget exhausted; {skipped} words left without audio tonight"
+            f"{skipped} words left without correct-pronunciation audio tonight; retried tomorrow"
         )
     for f in findings:
         entry = fetched.get(f.word)

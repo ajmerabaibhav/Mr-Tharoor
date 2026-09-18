@@ -83,8 +83,15 @@ def prefer_ipv4() -> None:
     original = socket.getaddrinfo
 
     def ipv4_first(*args, **kwargs):
+        # IPv4 ONLY when any IPv4 address exists; the full list otherwise.
+        # Sorting was not enough: when the IPv4 attempt failed fast, the
+        # connection loop fell through to the IPv6 address and hung there
+        # with no CPU and, in practice, no effective timeout -- a nightly
+        # job sat on one such socket for eight minutes. An IPv6-only network
+        # still works because the fallback keeps the whole list.
         results = original(*args, **kwargs)
-        return sorted(results, key=lambda r: 0 if r[0] == socket.AF_INET else 1)
+        v4 = [r for r in results if r[0] == socket.AF_INET]
+        return v4 if v4 else results
 
     socket.getaddrinfo = ipv4_first
     _patched = True
