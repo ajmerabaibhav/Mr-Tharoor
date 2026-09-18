@@ -123,10 +123,21 @@ class Listener:
     def stop(self, *_):
         self.running = False
 
-    def _record(self, seconds: float, path: str):
+    def _record(self, seconds: float, path: str, voice: bool):
+        """Two capture paths, chosen per situation, not per install.
+
+        The voice path (Apple's echo cancellation, beamforming, gain) is
+        worth having on a call, where the room is noisy and the other side
+        is playing through your speakers. It also ducks every other sound
+        the Mac makes, and there is no setting that turns that off entirely.
+
+        Reading aloud at a desk needs none of that: you are close, the room
+        is quiet, and the one thing you do not want is your video going
+        quiet because a coach started listening. So that path is raw.
+        """
         from . import capture
 
-        return capture.record(seconds, path, voice_processing=self.voice_processing)
+        return capture.record(seconds, path, voice_processing=voice)
 
     def _peek(self) -> bool:
         """Half a second of audio: is anyone talking?
@@ -160,14 +171,14 @@ Uses sounddevice, not AVAudioEngine, and never touches the voice path.
             self.logger.warning(f"peek failed: {type(exc).__name__}: {exc}")
             return False
 
-    def _capture_chunk(self, reason: str) -> bool:
+    def _capture_chunk(self, reason: str, voice: bool = True) -> bool:
         """Record one chunk. Returns whether it held speech and was kept."""
         import soundfile as sf
 
         stamp = datetime.now().strftime("%H%M%S")
         path = sessions_dir() / f"{stamp}.wav"
         try:
-            self._record(CHUNK_SECONDS, str(path))
+            self._record(CHUNK_SECONDS, str(path), voice)
         except Exception as exc:
             self.logger.error(f"capture failed: {type(exc).__name__}: {exc}")
             time.sleep(5)
@@ -217,16 +228,17 @@ Uses sounddevice, not AVAudioEngine, and never touches the voice path.
                 last_mode = decision.mode
 
             if decision.mode == context.LISTEN_ALWAYS:
-                self._capture_chunk(decision.reason)
+                self._capture_chunk(decision.reason, voice=self.voice_processing)
             elif decision.mode == context.LISTEN_SAMPLE:
                 if self._peek():
-                    self.logger.info("heard you start talking, recording")
-                    while self.running and context.decide().mode != context.LISTEN_NEVER:
-                        if not self._capture_chunk("reading aloud"):
+                    self.logger.info("heard you start talking, recording (raw path)")
+                    while self.running and context.decide().mode == context.LISTEN_SAMPLE:
+                        if not self._capture_chunk("reading aloud", voice=False):
                             break  # you stopped; go back to peeking
                 else:
                     time.sleep(PEEK_EVERY - PEEK_SECONDS)
             else:
+                # NEVER, or SKIP because Wispr Flow is already recording.
                 time.sleep(IDLE_EVERY)
 
         log.event("listener_stop", **self.stats.as_dict())

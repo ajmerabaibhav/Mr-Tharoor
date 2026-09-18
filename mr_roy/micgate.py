@@ -196,11 +196,31 @@ def _process_api_available() -> bool:
         return False
 
 
+def _is_our_listener(pid: int) -> bool:
+    """Is this Mr Roy's own daemon, seen from another process?
+
+    `roy gate` runs in its own process, so the listener's recording looked
+    like "an app is using the microphone" -- an alarming, nameless holder
+    that was actually us. Match on the command line, not the bundle id,
+    because a bare python process has none.
+    """
+    try:
+        import subprocess
+
+        command = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=2
+        ).stdout
+    except Exception:  # noqa: BLE001
+        return False
+    return "roy listen" in command or "mr_roy.cli listen" in command
+
+
 def mic_users(exclude_self: bool = True) -> list[MicUser]:
     """Every process currently running audio input, newest API only.
 
     Returns an empty list on macOS older than 14.2 -- callers should check
     `has_process_api` before treating that as "nobody is on a call".
+    Mr Roy's own listener is never counted, from any process.
     """
     if not _process_api_available():
         return []
@@ -213,7 +233,7 @@ def mic_users(exclude_self: bool = True) -> list[MicUser]:
             pid = _get(obj, kAudioProcessPropertyPID, ctypes.c_int32)
         except OSError:
             continue  # process vanished between the list read and the query
-        if exclude_self and pid == me:
+        if exclude_self and (pid == me or _is_our_listener(pid)):
             continue
         users.append(MicUser(pid=pid, bundle_id=_get_cfstring(obj, kAudioProcessPropertyBundleID)))
     return users

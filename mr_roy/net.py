@@ -26,7 +26,7 @@ _patched = False
 # between requests keeps a 200-word backfill under the limit without anyone
 # having to think about it; the retry handles the rest.
 MIN_INTERVAL = 1.0
-MAX_RETRIES = 4
+MAX_RETRIES = 2  # was 4: with 12s timeouts and 30s backoff one word could take a minute
 _last_request = 0.0
 
 

@@ -139,6 +139,7 @@ DICTATION_APPS = frozenset(
 LISTEN_NEVER = "never"  # nothing to hear, stay asleep
 LISTEN_ALWAYS = "always"  # a conversation is happening, record it
 LISTEN_SAMPLE = "sample"  # might be reading aloud, peek occasionally
+LISTEN_SKIP = "skip"  # someone else is already recording this for us
 
 
 @dataclass
@@ -149,7 +150,7 @@ class Decision:
 
     @property
     def listening(self) -> bool:
-        return self.mode != LISTEN_NEVER
+        return self.mode in (LISTEN_ALWAYS, LISTEN_SAMPLE)
 
 
 def running_apps() -> set[str]:
@@ -193,23 +194,26 @@ def frontmost() -> str | None:
 
 
 def playing_media(front: str | None = None) -> str | None:
-    """Which app is making sound, if it means you are listening not talking.
+    """Which app is making sound, if it means now is not a moment to listen.
 
-    Checks EVERY app, not just the frontmost one. The earlier version only
-    counted the front app as media, so a YouTube video playing in a background
-    Chrome window while you read in Claude did not register, and the mic kept
-    peeking over the top of it. Where the sound is coming from matters; which
-    window happens to be in front does not.
+    ANY sound counts, from any app that is not a call. Two earlier versions
+    were narrower and both let a video through: the first only looked at the
+    frontmost app; the second matched bundle ids, but a browser plays audio
+    from a helper process with a different id (com.google.Chrome.helper,
+    com.apple.WebKit.GPU), so YouTube never matched. The mic then peeked,
+    heard the video's voice through the speakers, mistook it for you, and
+    recorded thirty seconds of it through the voice path -- which ducks the
+    very audio you were trying to hear.
 
-    A browser making sound is a video. A browser on a call holds the
-    microphone, and that is checked before this. No URL is ever read.
+    The reasoning is simple: if the Mac is making sound, you are either
+    listening to it (so not reading aloud) or on a call (caught earlier by
+    the microphone check). Either way, peeking is wrong. No URL is ever read.
     """
     for app in micgate.audio_output_apps():
         bundle = app.bundle_id or ""
-        if not bundle or bundle in CALL_APPS:
+        if bundle in CALL_APPS:
             continue
-        if bundle in MEDIA_APPS or bundle in READING_APPS:
-            return bundle
+        return bundle or "an unnamed app"
     return None
 
 
@@ -228,9 +232,12 @@ def decide() -> Decision:
     if holders:
         app = dictating()
         if app:
-            # The orange mic is on. This is you talking, deliberately, close
-            # to the microphone: the best audio this tool will ever get.
-            return Decision(LISTEN_ALWAYS, f"you are dictating into {app}", front)
+            # The orange mic is on. Wispr Flow is recording you, storing the
+            # audio and working out the words -- better than we can, and it is
+            # what the nightly job reads first. Recording alongside it would
+            # duplicate the data and, through the voice path, duck whatever
+            # else the Mac is playing. So: do nothing, deliberately.
+            return Decision(LISTEN_SKIP, f"{app} is recording this for us", front)
         return Decision(
             LISTEN_SAMPLE,
             f"{holders[0].bundle_id} has the mic, which may just be Siri",

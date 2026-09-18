@@ -157,16 +157,45 @@ def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
     return out
 
 
+PRONUNCIATION_BUDGET_SECONDS = 90.0
+
+
 def attach_pronunciations(findings: list[Finding], limit_words: int = 30) -> None:
-    """Fetch the correct audio for the words that will be shown, in place."""
-    words: list[str] = []
+    """Fetch the correct audio for the words that will be shown, in place.
+
+    Under a hard time budget. Each new word is a network fetch, and on a bad
+    night -- rate limited, or the dead-IPv6 stall this network has -- one
+    word can take a minute of retries. Thirty of those and the job that was
+    supposed to run while you slept is still running when you wake up, at
+    0% CPU, waiting on a socket. Measured: that is exactly what happened.
+
+    Cached words are free and always attached. New words are fetched, most
+    frequent first, until the budget runs out; the rest get their audio
+    tomorrow. A report with a few missing play buttons beats no report.
+    """
+    import time
+
+    from . import log
+
+    counts: dict[str, int] = {}
     for f in findings:
-        if f.word not in words:
-            words.append(f.word)
+        counts[f.word] = counts.get(f.word, 0) + 1
+    words = sorted(counts, key=lambda w: -counts[w])[:limit_words]
+
+    cached_keys = set(dictionary.cached_words())
     fetched = {}
-    for word in words[:limit_words]:
-        entry = dictionary.lookup(word)
-        fetched[word] = entry
+    started = time.monotonic()
+    skipped = 0
+    for word in words:
+        key = dictionary.cache_key(word)
+        if key not in cached_keys and time.monotonic() - started > PRONUNCIATION_BUDGET_SECONDS:
+            skipped += 1
+            continue
+        fetched[word] = dictionary.lookup(word)
+    if skipped:
+        log.get("nightly").warning(
+            f"pronunciation budget exhausted; {skipped} words left without audio tonight"
+        )
     for f in findings:
         entry = fetched.get(f.word)
         if entry:
