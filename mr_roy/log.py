@@ -35,12 +35,23 @@ BACKUPS = 3
 _configured = False
 
 
-def get(name: str = "mr-roy") -> logging.Logger:
-    """A logger that writes to disk and only bothers the terminal on trouble."""
+ROOT_NAME = "mr-roy"
+
+
+def get(name: str = ROOT_NAME) -> logging.Logger:
+    """A logger that writes to disk and only bothers the terminal on trouble.
+
+    Handlers live on ONE parent logger; every other name is a child that
+    propagates to it. The first version attached the handlers to whichever
+    name was asked for first, so the nightly job's own "start nightly" lines
+    went to a logger with no handlers and vanished. A log that only records
+    some callers is a log you cannot trust.
+    """
     global _configured
-    logger = logging.getLogger(name)
+    child = None if name == ROOT_NAME else name
+    logger = logging.getLogger(ROOT_NAME)
     if _configured:
-        return logger
+        return logging.getLogger(f"{ROOT_NAME}.{child}") if child else logger
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     logger.setLevel(logging.DEBUG)
@@ -61,7 +72,7 @@ def get(name: str = "mr-roy") -> logging.Logger:
     logger.addHandler(to_screen)
     logger.propagate = False
     _configured = True
-    return logger
+    return logging.getLogger(f"{ROOT_NAME}.{child}") if child else logger
 
 
 @contextmanager

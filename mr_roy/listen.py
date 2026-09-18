@@ -335,8 +335,40 @@ def expected_with_words(
     return _build(text, choice)
 
 
+# Long audio is cut into windows this long before it reaches the model.
+# Attention cost grows with the square of the input: measured 30x realtime
+# at 10 seconds, 12.8x at 40, 7.6x at 120, and a 280-second dictation ran
+# for minutes with memory to match. Twenty-second windows keep every piece in
+# the fast regime, and cuts are placed at the quietest moment near each
+# boundary so a phoneme is not sliced in half.
+WINDOW_SECONDS = 20.0
+WINDOW_SLACK_SECONDS = 1.5
+
+
+def _split_points(audio, rate: int) -> list[int]:
+    """Sample indices to cut at: near each window mark, wherever it is quietest."""
+    import numpy as np
+
+    total = len(audio)
+    window = int(WINDOW_SECONDS * rate)
+    slack = int(WINDOW_SLACK_SECONDS * rate)
+    hop = int(0.02 * rate)
+    points = []
+    mark = window
+    while mark < total - slack:
+        lo, hi = max(mark - slack, 0), min(mark + slack, total)
+        frames = np.arange(lo, hi - hop, hop)
+        if len(frames) == 0:
+            points.append(mark)
+        else:
+            energy = np.array([float(np.abs(audio[f : f + hop]).mean()) for f in frames])
+            points.append(int(frames[int(np.argmin(energy))]))
+        mark = points[-1] + window
+    return points
+
+
 def heard(wav_path: str, enhance: bool = True) -> list[Token]:
-    """Run the phoneme model over one recording.
+    """Run the phoneme model over one recording, in windows.
 
     Enhancement is on by default and it is not cosmetic: on a first real
     recording it took SNR from 12 dB to 29 dB and the phoneme match rate from
@@ -345,11 +377,9 @@ def heard(wav_path: str, enhance: bool = True) -> list[Token]:
     """
     import numpy as np
     import soundfile as sf
-    import torch
 
     from .clean import enhance as enhance_audio
 
-    extractor, vocab, model, device = _model()
     audio, rate = sf.read(wav_path, dtype="float32")
     if audio.ndim > 1:
         audio = audio.mean(axis=1)
@@ -358,6 +388,23 @@ def heard(wav_path: str, enhance: bool = True) -> list[Token]:
     if rate != SAMPLE_RATE:
         raise ValueError(f"{wav_path} is {rate}Hz, expected {SAMPLE_RATE}")
 
+    tokens: list[Token] = []
+    start = 0
+    for cut in _split_points(audio, rate) + [len(audio)]:
+        piece = audio[start:cut]
+        if len(piece) > int(0.2 * rate):
+            offset = start / rate
+            for token in _heard_window(piece):
+                tokens.append(Token(token.symbol, token.confidence, round(token.second + offset, 3)))
+        start = cut
+    return tokens
+
+
+def _heard_window(audio) -> list[Token]:
+    """The model on one window of audio that is short enough to be fast."""
+    import torch
+
+    extractor, vocab, model, device = _model()
     inputs = extractor(
         audio,
         sampling_rate=SAMPLE_RATE,
