@@ -74,7 +74,7 @@ def _grammar_html(habits: list[dict]) -> str:
     )
     return (
         '<h2 class="sect">Phrasing</h2>'
-        '<div class="sub2">What you said into Wispr Flow, against what you meant. Habits, not slips: each of these came up more than once.</div>'
+        '<div class="sub2">What you said into Wispr Flow, against what you meant, over the last seven days. Habits, not slips: each of these came up more than once.</div>'
         f'<div class="card">{items}</div>'
     )
 

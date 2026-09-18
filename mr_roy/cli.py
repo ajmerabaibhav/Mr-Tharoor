@@ -565,7 +565,23 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
 
         daily.attach_pronunciations(findings)
         daily.save(findings, when)
-        grammar_rows = grammar.summarise(grammar_findings, limit=10)
+        # Raw corrections are kept per day; the report's habits are counted
+        # over the last week, because one day rarely repeats a phrase twice
+        # and a habit is by definition something that repeats.
+        from dataclasses import asdict as _asdict
+        from datetime import timedelta as _td
+        import json as _json
+
+        config.write_json_atomically(
+            config.REPORTS_DIR / f"{when.isoformat()}-grammar-raw.json",
+            [_asdict(g) for g in grammar_findings],
+        )
+        week: list = []
+        for back in range(7):
+            raw = config.REPORTS_DIR / f"{(when - _td(days=back)).isoformat()}-grammar-raw.json"
+            if raw.exists():
+                week += [grammar.GrammarFinding(**row) for row in _json.loads(raw.read_text())]
+        grammar_rows = [row for row in grammar.summarise(week, limit=10) if row["times"] >= 2]
         config.write_json_atomically(
             config.REPORTS_DIR / f"{when.isoformat()}-grammar.json", grammar_rows
         )

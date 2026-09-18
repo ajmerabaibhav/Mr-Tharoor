@@ -64,6 +64,7 @@ KNOWN_PHRASES = {
 }
 
 _WORD = re.compile(r"[a-z']+")
+CONTEXT = 2  # matching words required on each side of a correction
 
 
 @dataclass
@@ -140,7 +141,7 @@ def _same_stem(x: str, y: str) -> bool:
     return len(shorter) >= 3 and longer.startswith(shorter[: max(3, len(shorter) - 2)])
 
 
-def _phrase_window(words: list[str], start: int, end: int, pad: int = 2) -> str:
+def _phrase_window(words: list[str], start: int, end: int, pad: int = CONTEXT) -> str:
     lo, hi = max(start - pad, 0), min(end + pad, len(words))
     return " ".join(words[lo:hi])
 
@@ -159,8 +160,25 @@ def compare(heard: str, meant: str, source: str = "") -> list[GrammarFinding]:
             out.append(GrammarFinding("phrase", phrase, fix, heard.strip()[:160], source))
 
     matcher = difflib.SequenceMatcher(None, hw, mw, autojunk=False)
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+    opcodes = matcher.get_opcodes()
+    for n, (tag, i1, i2, j1, j2) in enumerate(opcodes):
         if tag == "equal":
+            continue
+        # A correction is ISOLATED: at least CONTEXT matching words on each
+        # side of it. difflib always alternates equal and changed runs, so
+        # "is the neighbour equal" is trivially true; what leaked was a
+        # one-word equal run between two changes, which the two-word context
+        # window then read straight across into the neighbouring rewrite,
+        # producing "what use computer use" -> "out use the computer use".
+        # Those were never corrections; they were fragments of a different
+        # sentence. Now the matching run must be as wide as the window.
+        def _run(k: int) -> int:
+            if k < 0 or k >= len(opcodes) or opcodes[k][0] != "equal":
+                return 0
+            return opcodes[k][2] - opcodes[k][1]
+
+        at_start, at_end = n == 0, n == len(opcodes) - 1
+        if not ((at_start or _run(n - 1) >= CONTEXT) and (at_end or _run(n + 1) >= CONTEXT)):
             continue
         before, after = hw[i1:i2], mw[j1:j2]
         if len(before) > 4 or len(after) > 4:
