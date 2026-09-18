@@ -211,18 +211,19 @@ def attach_pronunciations(findings: list[Finding], limit_words: int = 30) -> Non
         counts[f.word] = counts.get(f.word, 0) + 1
     words = sorted(counts, key=lambda w: -counts[w])[:limit_words]
 
-    cached_keys = set(dictionary.cached_words())
     fetched = {}
     started = time.monotonic()
     skipped = 0
     for word in words:
-        key = dictionary.cache_key(word)
-        if key in cached_keys:
-            fetched[word] = dictionary.lookup(word)  # disk only, instant
-            continue
         if time.monotonic() - started > PRONUNCIATION_BUDGET_SECONDS:
             skipped += 1
             continue
+        # EVERY lookup goes through the deadline, cached or not. The first
+        # version routed "cached" words around it as an instant disk read,
+        # but a cached entry whose audio file has since been deleted falls
+        # through to a network fetch -- with no deadline. That is exactly
+        # how the job hung a second time. A genuinely cached word returns in
+        # a millisecond either way; the wrapper costs nothing.
         entry = _with_deadline(lambda w=word: dictionary.lookup(w), PRONUNCIATION_WORD_SECONDS)
         if entry is None:
             skipped += 1
