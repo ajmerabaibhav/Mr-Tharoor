@@ -492,7 +492,7 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
       never hears. Words come from Whisper, which is weaker, so these count
       for a little less.
     """
-    from datetime import date as _date
+    from datetime import date as _date, datetime
 
     from . import daily, grammar, listener, listen, log, remind, report, schedule, streaks, wispr
 
@@ -576,11 +576,29 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
             config.REPORTS_DIR / f"{when.isoformat()}-grammar-raw.json",
             [_asdict(g) for g in grammar_findings],
         )
+        # Habits come from the last seven days of Wispr's own history, not
+        # from files we happen to have written. Keying off our own output
+        # meant the first ever run had one day of data, a habit needs to
+        # repeat, and a single day rarely repeats a phrase -- so the section
+        # was empty on exactly the run where it should have had a week of
+        # material sitting in Wispr's database already.
         week: list = []
-        for back in range(7):
-            raw = config.REPORTS_DIR / f"{(when - _td(days=back)).isoformat()}-grammar-raw.json"
-            if raw.exists():
-                week += [grammar.GrammarFinding(**row) for row in _json.loads(raw.read_text())]
+        if wispr.available():
+            cutoff = datetime.combine(
+                    when - _td(days=grammar.HABIT_WINDOW_DAYS - 1), datetime.min.time()
+                ).astimezone()
+            try:
+                for d in wispr.dictations(since=cutoff, with_audio=False):
+                    if d.when.date() <= when:
+                        week += grammar.compare(d.heard, d.meant, f"wispr-{d.id[:8]}")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"weekly grammar pass failed: {type(exc).__name__}: {exc}")
+                week = list(grammar_findings)
+        else:
+            for back in range(grammar.HABIT_WINDOW_DAYS):
+                raw = config.REPORTS_DIR / f"{(when - _td(days=back)).isoformat()}-grammar-raw.json"
+                if raw.exists():
+                    week += [grammar.GrammarFinding(**row) for row in _json.loads(raw.read_text())]
         grammar_rows = [row for row in grammar.summarise(week, limit=10) if row["times"] >= 2]
         config.write_json_atomically(
             config.REPORTS_DIR / f"{when.isoformat()}-grammar.json", grammar_rows

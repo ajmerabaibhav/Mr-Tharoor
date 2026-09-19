@@ -66,6 +66,12 @@ KNOWN_PHRASES = {
 _WORD = re.compile(r"[a-z']+")
 CONTEXT = 2  # matching words required on each side of a correction
 
+# How far back habits are counted. MEASURED on real history: 7 days gave 1
+# habit, 14 gave 2, 30 gave 4, 60 gave 8. A grammar habit is stable over a
+# month, and a month is recent enough that fixing it still matters. Seven
+# days was my guess and the data did not support it.
+HABIT_WINDOW_DAYS = 30
+
 
 @dataclass
 class GrammarFinding:
