@@ -1,36 +1,39 @@
 /* Mr Roy. 16 x 22 pixels on a canvas, nearest-neighbour scaled.
 
-   An old-school Indian professor of English: silver hair swept back, a
-   full silver moustache, spectacles, and a dark jacket over a high-collared
-   kurta. Courteous, exacting, entirely without condescension.
+   The archetype of the Indian statesman-scholar: silver-streaked hair swept
+   back, spectacles hanging on a cord at the chest, a dark blue Nehru
+   waistcoat over a pale collared shirt, pocket square, and a warm, faintly
+   amused expression. Courteous, exacting, never condescending.
 
-   s skin   d shadow   h hair/brows   m mouth   g spectacles
-   k kurta (high collar)   j jacket   t pocket square   p trousers  o shoes */
+   s skin   d shadow   h hair   b brow   e eye   m mouth
+   c shirt (pale)   v waistcoat (indigo)   g spectacles on their cord
+   t pocket square  p trousers  o shoes */
 
 (function () {
   var PALETTE = {
-    s: "#8A5433", d: "#6B3F26", h: "#D8D4CC", m: "#3B2419", g: "#2A2E33",
-    k: "#F2EFE8", j: "#1E2A38", t: "#B5852A", p: "#232C36", o: "#14181D"
+    s: "#9C6239", d: "#7A4A2A", h: "#4A4440", b: "#B8B2AC", e: "#241A14",
+    m: "#6B3C33", c: "#E8EDF2", v: "#2C3E5C", g: "#1A1D22", t: "#C9A227",
+    p: "#242A33", o: "#15181D"
   };
 
   var BODY = [
     "................",
-    "....hhhhhhhh....",   // swept-back silver hair
-    "...hhhhhhhhhh...",
-    "...hsssssssshd..",
-    "...hsssssssssd..",
-    "...ggggggggggd..",   // spectacles across the whole face
+    "....hhhhhhhh....",   // hair swept back, silver at the temples
+    "...hbhhhhhhbhd..",
+    "...hssssssssshd.",
+    "...hssssssssshd.",
+    "....s.ss.ss.sd..",   // eyes, filled per frame
     "....ssssssssd...",
-    "....shhhhhhsd...",   // full moustache
+    "....sdssssdsd...",   // the faint smile lines
     "....ss....ssd...",   // mouth row, filled per frame
     ".....ssssssd....",
     "......ssss......",   // neck
-    ".....kkkkkk.....",   // high kurta collar
-    "...jjkkkkkkjj...",
-    "..jjjkkkkkkjjj..",
-    "..jjtkkkkkkjjj..",   // pocket square
-    "..sjjkkkkkkjjs..",   // hands at the cuffs
-    "...jjjkkkkjjj...",
+    "....ccgccgcc....",   // shirt collar, spectacle cord over it
+    "...cvvgccgvvc...",   // waistcoat opens over the shirt
+    "..cvvvggggvvvc..",   // the spectacles themselves, resting at the chest
+    "..cvvvvccvvvvc..",
+    "..svvvtccvvvvs..",   // pocket square, hands at the cuffs
+    "...vvvvccvvvv...",
     "...pppppppppp...",
     "...ppp....ppp...",
     "...ppp....ppp...",
@@ -38,13 +41,13 @@
     "..oooo....oooo.."
   ];
 
-  var EYES_OPEN = "...gmggmggmggd..";   // dark pupils behind the lenses
-  var EYES_SHUT = "...gggggggggggd.";
-  var BROW_UP   = "...hhhhhhhhhhd..";   // a raised eyebrow, used sparingly
-  var BROW_REST = "...hsssssssshd..";
-  var MOUTH_SHUT = "....ssssssssd...";
-  var MOUTH_OPEN = "....ssmmmmssd...";
-  var MOUTH_WIDE = "....smmmmmmsd...";
+  var EYES_OPEN = "....seesseesd...";
+  var EYES_SHUT = "....sddssddsd...";
+  var BROW_UP   = "...bhbhhhhhbhd..";   // one eyebrow raised, used when talking
+  var BROW_REST = "...hbhhhhhhbhd..";
+  var MOUTH_SHUT = "....smmmmmmsd...";  // a settled, faint smile at rest
+  var MOUTH_OPEN = "....smmmmmmsd...";
+  var MOUTH_WIDE = "....mmmmmmmmd...";
 
   function Roy(canvas, scale) {
     this.ctx = canvas.getContext("2d");
@@ -71,10 +74,9 @@
     var ctx = this.ctx, s = this.scale;
     ctx.clearRect(0, 0, 16 * s, 22 * s);
 
-    // breathing: the head and torso lift one pixel every other beat
     var bob = this.reduced ? 0 : (Math.floor(frame / 4) % 2);
     var blinking = !this.reduced && frame % 25 === 0;
-    // a considered eyebrow, only while making a point
+    // the eyebrow goes up only while he is making a point
     var brow = this.talking && Math.floor(frame / 6) % 3 === 0;
 
     var mouth = MOUTH_SHUT;
@@ -82,7 +84,7 @@
 
     for (var y = 0; y < BODY.length; y++) {
       var row = BODY[y];
-      if (y === 3) row = brow ? BROW_UP : BROW_REST;
+      if (y === 2) row = brow ? BROW_UP : BROW_REST;
       if (y === 5) row = blinking ? EYES_SHUT : EYES_OPEN;
       if (y === 8) row = mouth;
       var offset = y < 17 ? bob : 0;   // feet stay planted

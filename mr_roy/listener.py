@@ -38,7 +38,15 @@ from pathlib import Path
 from . import config, context, log
 
 SAMPLE_RATE = 16000
-CHUNK_SECONDS = 30.0  # one file per half minute of conversation
+CHUNK_SECONDS = 30.0  # a call: long chunks, the mic is on anyway
+READING_CHUNK_SECONDS = 10.0  # reading aloud: short, so it lets go quickly
+
+# Reading aloud is speculative: nobody asked us to record, we guessed from a
+# half-second peek. So it is rationed. Measured on a real day the old loop
+# kept 213 chunks -- 106 minutes with the microphone lit -- because it
+# re-armed every time speech was heard anywhere near the machine.
+READING_BUDGET_MINUTES = 20.0  # per day, for the speculative path only
+READING_COOLDOWN_SECONDS = 120.0  # after a burst, leave the microphone alone
 PEEK_SECONDS = 0.4  # how long to listen when we suspect reading aloud
 PEEK_EVERY = 15.0  # how often to peek. Was 5s, which kept the orange
 # microphone indicator effectively lit all day. At 15s the mic is live under
@@ -98,11 +106,13 @@ class Stats:
     chunks_saved: int = 0
     chunks_dropped: int = 0
     seconds_saved: float = 0.0
+    reading_seconds: float = 0.0  # the speculative path only
     peeks: int = 0
     started: float = 0.0
 
     def as_dict(self) -> dict:
         return {
+            "reading_min": round(self.reading_seconds / 60, 1),
             "saved": self.chunks_saved,
             "dropped_silent": self.chunks_dropped,
             "minutes": round(self.seconds_saved / 60, 1),
@@ -119,6 +129,12 @@ class Listener:
         self.running = True
         self.voice_processing = use_voice_processing
         self.logger = log.get("listener")
+        self.cooldown_until = 0.0
+
+    def reading_budget_left(self) -> float:
+        """Seconds of speculative recording still allowed today."""
+        used = self.stats.reading_seconds + _reading_seconds_on_disk()
+        return max(READING_BUDGET_MINUTES * 60 - used, 0.0)
 
     def stop(self, *_):
         self.running = False
@@ -190,14 +206,15 @@ Uses sounddevice, not AVAudioEngine, and never touches the voice path.
             finally:
                 Path(scratch).unlink(missing_ok=True)
 
-    def _capture_chunk(self, reason: str, voice: bool = True) -> bool:
+    def _capture_chunk(self, reason: str, voice: bool = True,
+                       seconds: float = CHUNK_SECONDS) -> bool:
         """Record one chunk. Returns whether it held speech and was kept."""
         import soundfile as sf
 
         stamp = datetime.now().strftime("%H%M%S")
         path = sessions_dir() / f"{stamp}.wav"
         try:
-            self._record(CHUNK_SECONDS, str(path), voice)
+            self._record(seconds, str(path), voice)
         except Exception as exc:
             self.logger.error(f"capture failed: {type(exc).__name__}: {exc}")
             time.sleep(5)
@@ -249,11 +266,35 @@ Uses sounddevice, not AVAudioEngine, and never touches the voice path.
             if decision.mode == context.LISTEN_ALWAYS:
                 self._capture_chunk(decision.reason, voice=self.voice_processing)
             elif decision.mode == context.LISTEN_SAMPLE:
-                if self._peek():
-                    self.logger.info("heard you start talking, recording (raw path)")
-                    while self.running and context.decide().mode == context.LISTEN_SAMPLE:
-                        if not self._capture_chunk("reading aloud", voice=False):
+                budget = self.reading_budget_left()
+                if budget <= 0:
+                    if last_mode != "spent":
+                        self.logger.info(
+                            f"reading-aloud budget for today is spent "
+                            f"({READING_BUDGET_MINUTES:.0f} min). Calls still record."
+                        )
+                        last_mode = "spent"
+                    time.sleep(IDLE_EVERY * 6)
+                elif time.time() < self.cooldown_until:
+                    time.sleep(IDLE_EVERY)
+                elif self._peek():
+                    self.logger.info("heard you reading aloud, recording")
+                    # Short chunks, and re-check the world between each one.
+                    # The old loop held the microphone for a full 30 seconds
+                    # before asking whether it should still be listening.
+                    while self.running and self.reading_budget_left() > 0:
+                        if context.decide().mode != context.LISTEN_SAMPLE:
+                            break
+                        kept = self._capture_chunk(
+                            "reading aloud", voice=False, seconds=READING_CHUNK_SECONDS
+                        )
+                        self.stats.reading_seconds += READING_CHUNK_SECONDS
+                        if not kept:
                             break  # you stopped; go back to peeking
+                    # Whatever happened, step away from the microphone for a
+                    # while. Without this it re-armed the moment you spoke
+                    # again, and the orange indicator never went out.
+                    self.cooldown_until = time.time() + READING_COOLDOWN_SECONDS
                 else:
                     time.sleep(PEEK_EVERY - PEEK_SECONDS)
             else:
@@ -267,6 +308,17 @@ Uses sounddevice, not AVAudioEngine, and never touches the voice path.
 
 # Chunks are named HHMMSS.wav. Anything else in the folder is not a recording.
 _CHUNK = __import__("re").compile(r"^\d{6}\.wav$")
+
+
+def _reading_seconds_on_disk(day: date | None = None) -> float:
+    """Speculative recording already banked today, so a restart cannot reset it."""
+    total = 0.0
+    for wav in todays_audio(day):
+        try:
+            total += wav.stat().st_size / (SAMPLE_RATE * 2)
+        except OSError:
+            pass
+    return total
 
 
 def todays_audio(day: date | None = None) -> list[Path]:

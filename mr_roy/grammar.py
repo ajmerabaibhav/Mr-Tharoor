@@ -73,6 +73,18 @@ CONTEXT = 2  # matching words required on each side of a correction
 HABIT_WINDOW_DAYS = 30
 
 
+# What actually changed, and the rule behind it. A correction that only
+# shows two phrases makes you find the difference yourself; naming the word
+# and the reason is the part that teaches.
+RULES = {
+    "article": "English wants an article here. Count nouns rarely stand alone.",
+    "preposition": "The verb governs which preposition follows it, and it is not free choice.",
+    "number": "The noun and its determiner must agree in number.",
+    "verb": "The verb must agree with its subject, in person and in tense.",
+    "phrase": "A fixed expression that reads as Indian English to other ears.",
+}
+
+
 @dataclass
 class GrammarFinding:
     """One correction, with enough context to hear yourself in it."""
@@ -82,10 +94,40 @@ class GrammarFinding:
     should_be: str
     context: str  # the sentence you said, as heard
     source: str  # which dictation
+    change: str = ""  # "add", "use", "drop"
+    word: str = ""  # the word to add, use, or drop
 
     @property
     def headline(self) -> str:
         return f'you said "{self.said}", it should be "{self.should_be}"'
+
+    @property
+    def instruction(self) -> str:
+        """The single actionable sentence: which word, and what to do with it."""
+        if self.change == "add":
+            return f'add "{self.word}"'
+        if self.change == "drop":
+            return f'drop "{self.word}"'
+        if self.change == "use":
+            return f'use "{self.word}"'
+        return ""
+
+    @property
+    def rule(self) -> str:
+        return RULES.get(self.kind, "")
+
+
+def _describe(before: list[str], after: list[str]) -> tuple[str, str]:
+    """Which word changed, and whether it was added, dropped or swapped."""
+    missing = [w for w in after if w not in before]
+    extra = [w for w in before if w not in after]
+    if missing and not extra:
+        return "add", missing[0]
+    if extra and not missing:
+        return "drop", extra[0]
+    if missing:
+        return "use", missing[0]
+    return "", ""
 
 
 def _words(text: str) -> list[str]:
@@ -163,7 +205,8 @@ def compare(heard: str, meant: str, source: str = "") -> list[GrammarFinding]:
     lowered = " " + " ".join(hw) + " "
     for phrase, fix in KNOWN_PHRASES.items():
         if f" {phrase} " in lowered and phrase not in " ".join(mw):
-            out.append(GrammarFinding("phrase", phrase, fix, heard.strip()[:160], source))
+            out.append(GrammarFinding("phrase", phrase, fix, heard.strip()[:160], source,
+                                      change="use", word=fix))
 
     matcher = difflib.SequenceMatcher(None, hw, mw, autojunk=False)
     opcodes = matcher.get_opcodes()
@@ -196,7 +239,9 @@ def compare(heard: str, meant: str, source: str = "") -> list[GrammarFinding]:
         fixed = _phrase_window(mw, j1, j2) if after else _phrase_window(mw, j1, j1)
         if said == fixed:
             continue
-        out.append(GrammarFinding(kind, said, fixed, heard.strip()[:160], source))
+        change, word = _describe(before, after)
+        out.append(GrammarFinding(kind, said, fixed, heard.strip()[:160], source,
+                                  change=change, word=word))
     return out
 
 

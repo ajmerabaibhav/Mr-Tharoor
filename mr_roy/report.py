@@ -93,15 +93,23 @@ def _sureness(lower: float) -> str:
 def _grammar_html(habits: list[dict]) -> str:
     if not habits:
         return ""
-    items = "".join(
-        f'<div class="ab"><div class="who">'
-        f'<div class="word">you said &ldquo;{html.escape(h["said"])}&rdquo;</div>'
-        f'<div class="fix">it should be &ldquo;<b>{html.escape(h["should_be"])}</b>&rdquo;'
-        f'<span class="kind">{html.escape(h["kind"])} &middot; {h["times"]}x</span></div>'
-        f'<div class="ctx">&ldquo;{html.escape(h["context"][:120])}&rdquo;</div>'
-        f"</div></div>"
-        for h in habits
-    )
+    from . import grammar as _g
+
+    def one(h: dict) -> str:
+        f = _g.GrammarFinding(**{k: v for k, v in h.items() if k != "times"})
+        action = html.escape(f.instruction) if f.instruction else ""
+        return (
+            '<div class="ab"><div class="who">'
+            f'<div class="word">you said &ldquo;{html.escape(h["said"])}&rdquo;</div>'
+            + (f'<div class="action">{action}</div>' if action else "")
+            + f'<div class="fix">&ldquo;<b>{html.escape(h["should_be"])}</b>&rdquo;'
+            f'<span class="kind">{html.escape(h["kind"])} &middot; {h["times"]}x</span></div>'
+            f'<div class="rule">{html.escape(f.rule)}</div>'
+            f'<div class="ctx">&ldquo;{html.escape(h["context"][:120])}&rdquo;</div>'
+            "</div></div>"
+        )
+
+    items = "".join(one(h) for h in habits)
     return (
         '<h2 class="sect">Phrasing</h2>'
         '<div class="sub2">A matter of construction rather than sound. These are turns of phrase you have reached for more than once this month, set beside what the sentence actually wanted.</div>'
@@ -221,6 +229,9 @@ font:16px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
 .sect{font-size:1.15rem;margin:26px 0 10px;letter-spacing:-.01em}
 .sub2{color:var(--muted);font-size:.84rem;margin:-6px 0 12px}
 .fix{font-size:.95rem;color:var(--ink2);margin-top:2px}.fix b{color:var(--accent)}
+.action{display:inline-block;font-size:.8rem;font-weight:600;color:var(--accent);
+  background:var(--accentsoft);padding:2px 8px;border-radius:2px;margin:5px 0 3px}
+.rule{font-size:.78rem;color:var(--muted);font-style:italic;margin-top:4px}
 .kind{font-size:.7rem;color:var(--muted);margin-left:10px;text-transform:uppercase;letter-spacing:.06em}
 .card{background:var(--surface);border:1px solid var(--rule);margin-bottom:12px;overflow:hidden}
 .card-head{padding:14px 16px;border-bottom:1px solid var(--rule)}
