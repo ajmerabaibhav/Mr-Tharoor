@@ -38,16 +38,37 @@ CONTRAST_NAMES = {
     "d->retroflex": "D is retroflex",
 }
 
+# Mr Roy is an old-school Indian professor of English: courteous, exacting,
+# fond of a long word where a long word is warranted, and entirely without
+# condescension. He corrects the way a good teacher does, by showing you the
+# thing and trusting you to hear it.
 TIPS = {
-    "v->w": "Top teeth on the bottom lip, then switch your voice on.",
-    "w->v": "Round the lips and keep the teeth away.",
-    "th->t": "Tongue between the teeth and blow.",
-    "dh->d": "Tongue between the teeth, and voice it.",
-    "z->s": "Same mouth as s, voice on. Your throat should buzz.",
-    "zh->j": "Soft, like the middle of treasure. Do not stop it short.",
-    "final-d": "Do not harden the ending. Keep the voice on.",
-    "f->ph": "Teeth on lip and blow steadily. No puff of air.",
-    "ae->e": "Open the jaw wider than feels right.",
+    "v->w": "The upper teeth must meet the lower lip, and the voice must follow. "
+            "A rounded lip gives you a W, and W is not what the word asks for.",
+    "w->v": "Round the lips and keep the teeth well clear. A W never touches a tooth.",
+    "th->t": "The tongue ventures between the teeth and the breath passes over it. "
+             "It feels absurd. It is nonetheless correct.",
+    "dh->d": "Tongue between the teeth once more, but this time with voice behind it. "
+             "The TH of THIS, not the D of DIS.",
+    "z->s": "The identical mouth as an S, with the voice switched on. "
+            "Place a finger at the throat: you should feel it hum.",
+    "zh->j": "Soft and sustained, as in the middle of TREASURE. "
+             "Do not stop it short with a D in front.",
+    "final-d": "Do not harden the ending into a T. Let the voice carry through to the close.",
+    "f->ph": "Teeth upon the lip, and a steady stream of breath. No puff of air, which is a P.",
+    "ae->e": "Open the jaw rather wider than feels dignified. CAT, not KET.",
+    "o->aw": "Two vowels in one, gliding: OH-oo. Not a single flat note.",
+    "t->retroflex": "The tongue tip meets the ridge behind the upper teeth, not the roof.",
+    "d->retroflex": "Forward, at the ridge behind the teeth. The retroflex belongs to Hindi.",
+}
+
+OPENERS = {
+    "clear": "Good morning. I have listened, and I must tell you plainly: "
+             "there is a habit here, and habits are the only things worth correcting.",
+    "likely": "Good morning. A pattern is emerging. Not yet a certainty, but "
+              "emerging, and better attended to now than later.",
+    "watch": "Good morning. Little of consequence today, which is itself a "
+             "respectable result. One or two things merit an ear.",
 }
 
 
@@ -83,7 +104,7 @@ def _grammar_html(habits: list[dict]) -> str:
     )
     return (
         '<h2 class="sect">Phrasing</h2>'
-        '<div class="sub2">What you said into Wispr Flow, against what you meant, over the last month. Habits, not slips: each of these came up more than once.</div>'
+        '<div class="sub2">A matter of construction rather than sound. These are turns of phrase you have reached for more than once this month, set beside what the sentence actually wanted.</div>'
         f'<div class="card">{items}</div>'
     )
 
@@ -129,9 +150,14 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None) -> 
 
     body = "".join(rows) or (
         '<div class="card"><div class="card-head"><div class="words">'
-        "Nothing flagged. Either a clean day or a quiet one.</div></div></div>"
+        "Nothing worth reporting. Either a creditable day or a quiet one, "
+        "and I shall not manufacture a fault to fill a page.</div></div></div>"
     )
-    greeting = f"Good morning, {config.user_name()}."
+    best = max(bounds.values(), default=0.0)
+    mood = "clear" if best >= 0.15 else ("likely" if best >= 0.08 else "watch")
+    name = config.user_name()
+    greeting = f"Good morning, {name}."
+    remark = OPENERS[mood]
     return (
         TEMPLATE.replace("{{GREETING}}", html.escape(greeting))
         .replace("{{DATE}}", day.strftime("%A %d %B %Y"))
@@ -139,6 +165,7 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None) -> 
         .replace("{{SOUNDS}}", str(len(grouped)))
         .replace("{{CARDS}}", body)
         .replace("{{GRAMMAR}}", _grammar_html(grammar or []))
+        .replace("{{REMARK}}", html.escape(remark))
     )
 
 
@@ -190,6 +217,7 @@ font:16px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
 .wrap{max-width:760px;margin:0 auto}h1{font-size:2rem;margin:0 0 4px;letter-spacing:-.02em}
 .sub{color:var(--muted);font-size:.88rem;margin-bottom:24px}
 .greet{font-family:-apple-system,"Helvetica Neue",sans-serif;font-size:1.05rem;color:var(--accent);font-weight:600;margin-bottom:6px}
+.remark{font-style:italic;color:var(--ink2);font-size:.95rem;line-height:1.5;margin:10px 0 18px;padding-left:14px;border-left:3px solid var(--accentsoft);max-width:60ch}
 .sect{font-size:1.15rem;margin:26px 0 10px;letter-spacing:-.01em}
 .sub2{color:var(--muted);font-size:.84rem;margin:-6px 0 12px}
 .fix{font-size:.95rem;color:var(--ink2);margin-top:2px}.fix b{color:var(--accent)}
@@ -215,6 +243,7 @@ font:inherit;font-size:.8rem;cursor:pointer;color:var(--ink2)}
 </style></head><body><div class="wrap">
 <div class="greet">{{GREETING}}</div>
 <h1>What I heard you say</h1>
+<div class="remark">{{REMARK}}</div>
 <div class="sub">{{DATE}} &middot; {{TOTAL}} mistakes across {{SOUNDS}} sounds &middot; press a button to hear it</div>
 <h2 class="sect">Pronunciation</h2>
 {{CARDS}}

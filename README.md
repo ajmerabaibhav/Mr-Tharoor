@@ -4,6 +4,12 @@ A pronunciation and phrasing coach that listens to how you actually talk, and
 each morning greets you with the words you got wrong, your own voice next to a
 recording of them said properly, and the phrases you keep getting backwards.
 
+Mr Roy is an old-school Indian professor of English: courteous, exacting,
+fond of a long word where a long word is warranted, and entirely without
+condescension. He corrects the way a good teacher does, by showing you the
+thing and trusting your ear to do the rest. He is nobody in particular, and
+deliberately so.
+
 You cannot learn a sound by reading a symbol. `/ˈvɜːʒn̩/` teaches nobody
 anything. Hearing yourself say *wersion*, then hearing *version*, teaches it in
 one second.
@@ -120,6 +126,13 @@ wav2vec2-espeak     ──►  the sounds you MADE
         ▼
    report only when the 95% lower bound says the error rate is real
 ```
+
+A sound reaches the page when the pooled rate across every word carrying it
+clears a credible lower bound, not when one detection happened to be
+confident. Measured on a real day: /th/ went wrong on 22% of its chances, a
+genuine habit; /d/, /z/, /v/ and the trap vowel all sat between 0.5% and 2%,
+which is a detector's noise floor. Confidence answers "did the model hear
+this clearly" and says nothing at all about whether it is a habit.
 
 Evidence about a sound compounds across every word that contains it. If you
 produce `/w/` for `/v/` 140 times out of 200 across forty words, then saying
