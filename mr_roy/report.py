@@ -60,6 +60,15 @@ def _audio_tag(path: str | None, label: str, css: str) -> str:
     )
 
 
+def _sureness(lower: float) -> str:
+    """Plain words for a credible bound. A number nobody trusts teaches nothing."""
+    if lower >= 0.15:
+        return "a clear habit"
+    if lower >= 0.08:
+        return "likely a habit"
+    return "worth watching"
+
+
 def _grammar_html(habits: list[dict]) -> str:
     if not habits:
         return ""
@@ -80,7 +89,8 @@ def _grammar_html(habits: list[dict]) -> str:
 
 
 def build_html(findings: list, day: date, grammar: list[dict] | None = None) -> str:
-    grouped = daily.group(findings)
+    grouped = daily.group(findings, day)
+    bounds = daily.trustworthy_contrasts(findings, day)
     total = len(findings)
     rows = []
     for contrast, items in grouped.items():
@@ -111,7 +121,7 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None) -> 
             f'<span class="bad">/{html.escape(first.said)}/</span>'
             f'<span class="arrow">you said, should be</span>'
             f'<span class="good">/{html.escape(first.should_be)}/</span>'
-            f'<span class="n">{len(items)}x</span></div>'
+            f'<span class="n">{len(items)}x &middot; {_sureness(bounds.get(contrast, 0.0))}</span></div>'
             f'<div class="words">{CONTRAST_NAMES.get(contrast, contrast)}'
             f' &middot; {html.escape(TIPS.get(contrast, ""))}</div></div>'
             f"{blocks}</div>"

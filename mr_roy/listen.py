@@ -689,12 +689,22 @@ def analyse(wav_path: str, text: str) -> dict:
         if 0 <= diff.index < len(owner):
             diff.word = owner[diff.index]
     scored = [d for d in diffs if d.scored]
+
+    # How many chances each (word, sound) had in this recording. Without it a
+    # finding is a bare count, and 11 flags means nothing until you know
+    # whether it was 11 out of 15 or 11 out of 166.
+    chances: dict[tuple[str, str], int] = {}
+    for position, phoneme in enumerate(expected):
+        if position < len(owner):
+            key = (owner[position], phoneme)
+            chances[key] = chances.get(key, 0) + 1
     matched = sum(
         1 for d in diffs if d.expected is not None and d.actual is not None
     )
     return {
         "path": wav_path,
         "quality": quality,
+        "chances": chances,
         "text": text,
         "words": words,
         "expected_count": len(expected),

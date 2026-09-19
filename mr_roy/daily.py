@@ -37,6 +37,12 @@ CLIP_PAD_BEFORE = 0.35
 CLIP_PAD_AFTER = 0.45
 MIN_CONFIDENCE = 0.45
 
+# A sound is shown when we are 95% sure it goes wrong at least this often.
+# Measured on a real day: /th/ fires on 22% of its chances (a habit), while
+# /d/, /z/, /v/ and the trap vowel all sat between 0.5% and 2% -- the noise
+# floor of a detector, not anything a person does.
+CONTRAST_THRESHOLD = 0.04
+
 
 @dataclass
 class Finding:
@@ -54,6 +60,7 @@ class Finding:
     correct_path: str | None = None  # a human, saying it properly
     ipa: str | None = None
     quality: float = 1.0  # how clean the audio was, 0 to 1
+    chances: int = 1  # how many times this sound could have occurred here
 
     @property
     def evidence_weight(self) -> float:
@@ -152,6 +159,7 @@ def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
                 correct_path=None,
                 ipa=None,
                 quality=quality_weight,
+                chances=result["chances"].get((diff.word, diff.expected), 1),
             )
         )
     return out
@@ -242,14 +250,70 @@ def attach_pronunciations(findings: list[Finding], limit_words: int = 30) -> Non
             f.ipa = entry.ipa
 
 
-def group(findings: list[Finding]) -> dict[str, list[Finding]]:
-    """By sound, worst first. One lesson per sound, not one per word."""
+def assess(findings: list[Finding], day: date | None = None):
+    """What the evidence model makes of a day's findings.
+
+    This existed and the report never called it. Findings went on the page
+    if one detection cleared a raw confidence threshold, which is how a
+    single flag on "what" -- 11 of 166 chances at the sound, most of them
+    fine -- ended up next to a habit that fires on a fifth of its chances.
+    Confidence answers "did the model hear this clearly". It does not answer
+    "is this a habit", and only the second belongs in a morning report.
+    """
+    from . import evidence
+
+    day = day or date.today()
+    pooled: dict[tuple[str, str], list[float]] = {}
+    for f in findings:
+        key = (f.word, f.contrast)
+        row = pooled.setdefault(key, [0.0, 0.0])
+        row[0] += f.chances
+        row[1] += f.evidence_weight
+    observations = [
+        evidence.Observation(day, word, contrast, int(max(n, 1)), min(k, n))
+        for (word, contrast), (n, k) in pooled.items()
+    ]
+    return evidence.assess(observations, day)
+
+
+def trustworthy_contrasts(findings: list[Finding], day: date | None = None) -> dict[str, float]:
+    """Sounds worth showing, and how sure we are, worst first.
+
+    A sound earns its place when the pooled rate across every word carrying
+    it is real, not when one word produced one confident detection.
+    """
+    from . import evidence
+
+    day = day or date.today()
+    totals: dict[str, list[float]] = {}
+    for f in findings:
+        row = totals.setdefault(f.contrast, [0.0, 0.0])
+        row[0] += f.chances
+        row[1] += f.evidence_weight
+    out = {}
+    for contrast, (n, k) in totals.items():
+        k = min(k, n)
+        alpha = max(evidence.GLOBAL_ALPHA + k, evidence.SHAPE_FLOOR)
+        beta = max(evidence.GLOBAL_BETA + (n - k), evidence.SHAPE_FLOOR)
+        lower = evidence.beta_ppf(evidence.CREDIBLE_LEVEL, alpha, beta)
+        out[contrast] = lower
+    return dict(sorted(out.items(), key=lambda kv: -kv[1]))
+
+
+def group(findings: list[Finding], day: date | None = None) -> dict[str, list[Finding]]:
+    """By sound, worst first, and only sounds the evidence supports."""
+    bounds = trustworthy_contrasts(findings, day)
     grouped: dict[str, list[Finding]] = {}
     for finding in findings:
         grouped.setdefault(finding.contrast, []).append(finding)
     for items in grouped.values():
         items.sort(key=lambda f: -f.confidence)
-    return dict(sorted(grouped.items(), key=lambda kv: -len(kv[1])))
+    keep = {c: items for c, items in grouped.items()
+            if bounds.get(c, 0.0) >= CONTRAST_THRESHOLD}
+    if not keep:  # nothing certain: show the single best, clearly marked
+        best = max(bounds, key=lambda c: bounds[c], default=None)
+        keep = {best: grouped[best]} if best else {}
+    return dict(sorted(keep.items(), key=lambda kv: -bounds.get(kv[0], 0.0)))
 
 
 def embed(path: str | None) -> str | None:
