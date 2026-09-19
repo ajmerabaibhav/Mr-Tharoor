@@ -10,13 +10,13 @@ and nothing needs a daemon sitting awake.
 
 Three agents, deliberately separate so one failing never takes the others out:
 
-    com.mrroy.listen    at login, stays resident, sleeps until there is
+    com.tharoor.listen    at login, stays resident, sleeps until there is
                         something to hear. ~9 seconds of CPU across a 14 hour
                         day. Restarted if it dies, throttled so a crash loop
                         cannot spin the CPU.
-    com.mrroy.nightly   23:30, analyses the day. Skips itself on battery, so
+    com.tharoor.nightly   23:30, analyses the day. Skips itself on battery, so
                         it never wakes up and drains a laptop in a bag.
-    com.mrroy.morning   08:30, opens the report and sends the day's reminders.
+    com.tharoor.morning   08:30, opens the report and sends the day's reminders.
 
 Every agent runs as you, in your login session. Nothing installs to /Library,
 nothing needs sudo, nothing runs as root. Removing it is `roy uninstall`, and
@@ -37,20 +37,20 @@ AGENTS_DIR = Path.home() / "Library" / "LaunchAgents"
 LOG_DIR = config.ROOT / "logs"
 
 JOBS = {
-    "com.mrroy.listen": {
+    "com.tharoor.listen": {
         "args": ["listen"],
         "resident": True,  # starts at login and stays up
         "battery_safe": True,  # 8.3 seconds of CPU across a whole day
         "what": "listen, context-aware, all day",
     },
-    "com.mrroy.nightly": {
+    "com.tharoor.nightly": {
         "args": ["analyse-day"],
         "hour": 23,
         "minute": 30,
         "battery_safe": False,  # plugged in only: this is the expensive one
         "what": "analyse the day's speech",
     },
-    "com.mrroy.morning": {
+    "com.tharoor.morning": {
         "args": ["morning"],
         "hour": 8,
         "minute": 30,
@@ -62,10 +62,10 @@ JOBS = {
 
 def _roy() -> str:
     """The installed command, resolved now rather than guessed at run time."""
-    found = shutil.which("roy")
+    found = shutil.which("tharoor")
     if found:
         return found
-    return f"{sys.executable} -m mr_roy.cli"
+    return f"{sys.executable} -m mr_tharoor.cli"
 
 
 def plist_for(label: str, job: dict) -> dict:
@@ -106,7 +106,7 @@ def plist_for(label: str, job: dict) -> dict:
         "LowPriorityIO": True,
         "Nice": 5,  # never compete with whatever you are actually doing
         "ProcessType": "Background",
-        "EnvironmentVariables": {"MR_ROY_HOME": str(config.ROOT)},
+        "EnvironmentVariables": {"MR_THAROOR_HOME": str(config.ROOT)},
     }
 
 

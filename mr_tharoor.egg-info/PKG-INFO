@@ -1,3 +1,26 @@
+Metadata-Version: 2.4
+Name: mr-tharoor
+Version: 0.1.0
+Summary: A local pronunciation coach for macOS. Hears how you actually talk, and plays you the words you got wrong.
+License: MIT
+Project-URL: Homepage, https://github.com/ajmerabaibhav/Mr-Roy-
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: sounddevice>=0.5
+Requires-Dist: soundfile>=0.12
+Requires-Dist: numpy>=1.24
+Requires-Dist: cmudict>=1.0
+Requires-Dist: torch>=2.0
+Requires-Dist: transformers>=4.30
+Requires-Dist: faster-whisper>=1.0
+Requires-Dist: huggingface-hub>=0.20
+Requires-Dist: pyobjc-framework-AVFoundation>=10
+Requires-Dist: pyobjc-framework-Cocoa>=10
+Provides-Extra: dev
+Requires-Dist: ruff>=0.5; extra == "dev"
+Dynamic: license-file
+
 # Mr Tharoor
 
 A pronunciation and phrasing coach that listens to how you actually talk, and
@@ -7,14 +30,8 @@ recording of them said properly, and the phrases you keep getting backwards.
 Mr Tharoor is an old-school Indian professor of English: courteous, exacting,
 fond of a long word where a long word is warranted, and entirely without
 condescension. He corrects the way a good teacher does, by showing you the
-thing and trusting your ear to do the rest.
-
-> **A tribute, not an association.** The name and manner are an affectionate
-> nod to Dr Shashi Tharoor, whose command of English is the standard many of
-> us grew up measuring ourselves against. This project is **not affiliated
-> with, endorsed by, or connected to him in any way**, and the character is
-> a fictional mascot. Every word it speaks was written for this software.
-> If any objection is ever raised, the name will be changed without argument.
+thing and trusting your ear to do the rest. He is nobody in particular, and
+deliberately so.
 
 You cannot learn a sound by reading a symbol. `/ˈvɜːʒn̩/` teaches nobody
 anything. Hearing yourself say *wersion*, then hearing *version*, teaches it in

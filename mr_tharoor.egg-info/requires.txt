@@ -1,0 +1,13 @@
+sounddevice>=0.5
+soundfile>=0.12
+numpy>=1.24
+cmudict>=1.0
+torch>=2.0
+transformers>=4.30
+faster-whisper>=1.0
+huggingface-hub>=0.20
+pyobjc-framework-AVFoundation>=10
+pyobjc-framework-Cocoa>=10
+
+[dev]
+ruff>=0.5

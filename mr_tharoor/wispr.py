@@ -97,7 +97,7 @@ def _check_schema(conn: sqlite3.Connection) -> None:
     if missing:
         raise SchemaChanged(
             f"History is missing {sorted(missing)}; this reader was written for an "
-            f"older Wispr Flow. Update mr_roy/wispr.py or run the built-in listener."
+            f"older Wispr Flow. Update mr_tharoor/wispr.py or run the built-in listener."
         )
 
 

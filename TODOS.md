@@ -4,7 +4,7 @@ Everything deferred is written down here. A vague intention is a lie.
 
 ## The honest state
 
-Mr Roy runs. Three launchd agents: a context-aware listener at login, analysis
+Mr Tharoor runs. Three launchd agents: a context-aware listener at login, analysis
 at 23:30, the report and greeting at 08:30. For dictation it reads Wispr Flow's
 own database (audio already paired with the words you meant); its own
 microphone covers meetings, calls and reading aloud. The report has a

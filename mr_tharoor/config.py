@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-ROOT = Path(os.environ.get("MR_ROY_HOME", Path.home() / "mr-roy"))
+ROOT = Path(os.environ.get("MR_THAROOR_HOME", Path.home() / "mr-tharoor"))
 
 CACHE_DIR = ROOT / "cache"
 AUDIO_DIR = CACHE_DIR / "audio"
@@ -17,7 +17,7 @@ CLIPS_DIR = DATA_DIR / "clips"
 REPORTS_DIR = ROOT / "reports"
 
 # Wikimedia asks for a descriptive User-Agent on API traffic.
-USER_AGENT = "mr-roy/0.1 (personal pronunciation tool; local use)"
+USER_AGENT = "mr-tharoor/0.1 (personal pronunciation tool; local use)"
 NETWORK_TIMEOUT = 12
 
 # Which recording to prefer when Wiktionary has several.
@@ -31,7 +31,7 @@ def user_name() -> str:
     """Who the morning report greets. Overridable, defaults to the Mac account."""
     import subprocess
 
-    override = os.environ.get("MR_ROY_NAME")
+    override = os.environ.get("MR_THAROOR_NAME")
     if override:
         return override
     try:

@@ -1,4 +1,4 @@
-"""Mr Roy, your pronunciation teacher.
+"""Mr Tharoor, your pronunciation teacher.
 
     roy drill version three       say it after him, three times each
     roy say version               hear it once
@@ -13,7 +13,7 @@
     roy analyse                   score those recordings, see if he can hear you
     roy mictest                   compare microphones, find your best setup
     roy install                   run every day by itself (launchd)
-    roy remind                    what Mr Roy would nudge you about
+    roy remind                    what Mr Tharoor would nudge you about
     roy gate                      is the mic gate working on this Mac
     roy cache                     what is already offline
 """
@@ -63,7 +63,7 @@ def cmd_drill(args: argparse.Namespace) -> int:
         rows = streaks.tonights_report()
         words = [w for row in rows for w in row.words[:2]][:4]
         if not words:
-            print("Nothing to drill yet. Mr Roy has not heard you speak.")
+            print("Nothing to drill yet. Mr Tharoor has not heard you speak.")
             print("Give him words directly:  roy drill version three")
             return 0
         print("Tonight's worst, from your own speech:\n")
@@ -96,7 +96,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     rows = streaks.tonights_report()
     if not rows:
         print("Nothing flagged to check yet.")
-        print("Mr Roy needs to have heard you speak first.")
+        print("Mr Tharoor needs to have heard you speak first.")
         return 0
 
     pending = [(row, word) for row in rows for word in row.words[: args.per_sound]]
@@ -106,7 +106,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     saved = 0
     for row, word in pending:
         entry = dictionary.lookup(word)
-        print(f"  {word}  ({row.contrast})   Mr Roy is {row.lower_bound:.0%} sure")
+        print(f"  {word}  ({row.contrast})   Mr Tharoor is {row.lower_bound:.0%} sure")
         if entry.audio_path:
             print("     playing the correct pronunciation...")
             dictionary.play(word)
@@ -138,7 +138,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_score(args: argparse.Namespace) -> int:
-    """How right has Mr Roy actually been?"""
+    """How right has Mr Tharoor actually been?"""
     card = accuracy.scorecard()
     print(f"  {card.verdict}\n")
     if card.flagged:
@@ -238,7 +238,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
         print(f"         saved {path.name}\n")
 
     print(f"\nAll {len(probe.recorded())} recorded in {probe.PROBE_DIR}")
-    print("Next: the phoneme model scores these and we find out if Mr Roy works.")
+    print("Next: the phoneme model scores these and we find out if Mr Tharoor works.")
     return 0
 
 
@@ -380,7 +380,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     from . import schedule
 
     problems = []
-    print("Mr Roy setup\n")
+    print("Mr Tharoor setup\n")
 
     print("  1. this machine")
     if platform.system() != "Darwin":
@@ -458,7 +458,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print(f"  Set up with problems: {', '.join(problems)}")
         print("  Fix those and run `roy setup` again.")
         return 1
-    print("  Ready. Mr Roy is listening now and starts on every login.")
+    print("  Ready. Mr Tharoor is listening now and starts on every login.")
     print()
     print("  Talk normally. At 23:30 he analyses the day, at 08:30 the report")
     print("  opens by itself. Nothing leaves this machine.")
@@ -677,7 +677,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
     from . import context
 
     decision = context.decide()
-    print("SHOULD MR ROY BE LISTENING RIGHT NOW?")
+    print("SHOULD MR THAROOR BE LISTENING RIGHT NOW?")
     print(f"  answer    : {decision.mode.upper()}")
     print(f"  because   : {decision.reason}")
     print(f"  frontmost : {decision.frontmost}")
@@ -706,7 +706,7 @@ def cmd_cache(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="roy", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog="tharoor", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
 
     drill = sub.add_parser("drill", help="say it after him, three times each")
@@ -719,7 +719,7 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--per-sound", type=int, default=2, help="words to judge per sound")
     check.set_defaults(func=cmd_check)
 
-    score = sub.add_parser("score", help="how accurate Mr Roy has actually been")
+    score = sub.add_parser("score", help="how accurate Mr Tharoor has actually been")
     score.set_defaults(func=cmd_score)
 
     say = sub.add_parser("say", help="play the correct pronunciation out loud")
@@ -773,7 +773,7 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--dry-run", action="store_true")
     install.set_defaults(func=cmd_install)
 
-    remind_cmd = sub.add_parser("remind", help="what Mr Roy would nudge you about")
+    remind_cmd = sub.add_parser("remind", help="what Mr Tharoor would nudge you about")
     remind_cmd.add_argument("--send", action="store_true", help="actually notify")
     remind_cmd.set_defaults(func=cmd_remind)
 

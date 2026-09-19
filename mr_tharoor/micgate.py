@@ -31,7 +31,7 @@ from dataclasses import dataclass
 
 _path = ctypes.util.find_library("CoreAudio")
 if _path is None:  # pragma: no cover - macOS always has this
-    raise ImportError("CoreAudio not found; mr-roy is macOS only")
+    raise ImportError("CoreAudio not found; mr-tharoor is macOS only")
 _ca = ctypes.CDLL(_path)
 
 
@@ -197,7 +197,7 @@ def _process_api_available() -> bool:
 
 
 def _is_our_listener(pid: int) -> bool:
-    """Is this Mr Roy's own daemon, seen from another process?
+    """Is this Mr Tharoor's own daemon, seen from another process?
 
     `roy gate` runs in its own process, so the listener's recording looked
     like "an app is using the microphone" -- an alarming, nameless holder
@@ -212,7 +212,7 @@ def _is_our_listener(pid: int) -> bool:
         ).stdout
     except Exception:  # noqa: BLE001
         return False
-    return "roy listen" in command or "mr_roy.cli listen" in command
+    return "roy listen" in command or "mr_tharoor.cli listen" in command
 
 
 def mic_users(exclude_self: bool = True) -> list[MicUser]:
@@ -220,7 +220,7 @@ def mic_users(exclude_self: bool = True) -> list[MicUser]:
 
     Returns an empty list on macOS older than 14.2 -- callers should check
     `has_process_api` before treating that as "nobody is on a call".
-    Mr Roy's own listener is never counted, from any process.
+    Mr Tharoor's own listener is never counted, from any process.
     """
     if not _process_api_available():
         return []

@@ -84,7 +84,7 @@ def _load() -> list[Card]:
         return [Card(**row) for row in json.loads(QUEUE_FILE.read_text())]
     except (json.JSONDecodeError, TypeError):
         dead = config.quarantine(QUEUE_FILE)
-        print(f"mr-roy: reminder queue was unreadable, kept a copy at {dead}")
+        print(f"mr-tharoor: reminder queue was unreadable, kept a copy at {dead}")
         return []
 
 

@@ -1,4 +1,4 @@
-"""The statistics. If these are wrong, every number Mr Roy shows is a lie.
+"""The statistics. If these are wrong, every number Mr Tharoor shows is a lie.
 
 Run: python3 tests/test_evidence.py
 """
@@ -9,8 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mr_roy import evidence as e
-from mr_roy.evidence import Observation
+from mr_tharoor import evidence as e
+from mr_tharoor.evidence import Observation
 
 TODAY = date(2026, 9, 15)
 

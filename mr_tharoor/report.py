@@ -38,7 +38,7 @@ CONTRAST_NAMES = {
     "d->retroflex": "D is retroflex",
 }
 
-# Mr Roy is an old-school Indian professor of English: courteous, exacting,
+# Mr Tharoor is an old-school Indian professor of English: courteous, exacting,
 # fond of a long word where a long word is warranted, and entirely without
 # condescension. He corrects the way a good teacher does, by showing you the
 # thing and trusting you to hear it.
@@ -215,7 +215,7 @@ def open_report(day: date | None = None) -> str | None:
 
 
 TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
-<title>Mr Roy - {{DATE}}</title><style>
+<title>Mr Tharoor - {{DATE}}</title><style>
 :root{--ground:#F2F4F4;--surface:#fff;--ink:#101C1B;--ink2:#3A4A48;--muted:#697A78;
 --rule:#D3DAD9;--accent:#0F6E68;--accentsoft:#D9EAE8;--crit:#A8261C}
 @media(prefers-color-scheme:dark){:root{--ground:#0C1312;--surface:#141D1C;--ink:#E7EDEC;
@@ -259,6 +259,9 @@ font:inherit;font-size:.8rem;cursor:pointer;color:var(--ink2)}
 <h2 class="sect">Pronunciation</h2>
 {{CARDS}}
 {{GRAMMAR}}
+<div class="tribute">Mr Tharoor is a fictional mascot, named in tribute to Dr Shashi Tharoor.
+This software is not affiliated with, endorsed by, or connected to him. Every word it speaks
+was written for this program.</div>
 </div><script>
 var playing=null;
 document.addEventListener('click',function(e){

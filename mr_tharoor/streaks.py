@@ -88,7 +88,7 @@ class Finding:
 
 @dataclass
 class Verdict:
-    """What Mr Roy thinks about this mistake after watching it for a while."""
+    """What Mr Tharoor thinks about this mistake after watching it for a while."""
 
     word: str
     contrast: str
@@ -124,7 +124,7 @@ def _load() -> dict:
         # Overwriting it with {} would erase every week of history in
         # silence, so keep the bytes and make the loss visible.
         dead = config.quarantine(HISTORY_FILE)
-        print(f"mr-roy: history was unreadable, kept a copy at {dead}")
+        print(f"mr-tharoor: history was unreadable, kept a copy at {dead}")
         return {}
 
 
@@ -235,7 +235,7 @@ def verdicts(today: date | None = None, window: int = WINDOW_DAYS) -> list[Verdi
             message = f"Down to {days_seen} of {window} days from a daily habit. Keep going."
         elif days_seen == 2:
             status = "watch"
-            message = f"Twice in {window} days. One more and Mr Roy calls it a habit."
+            message = f"Twice in {window} days. One more and Mr Tharoor calls it a habit."
         else:
             status = "new"
             message = "First time this week. Might be nothing."

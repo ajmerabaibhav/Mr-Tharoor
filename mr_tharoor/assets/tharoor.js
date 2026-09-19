@@ -1,4 +1,4 @@
-/* Mr Roy. 16 x 22 pixels on a canvas, nearest-neighbour scaled.
+/* Mr Tharoor. 16 x 22 pixels on a canvas, nearest-neighbour scaled.
 
    The archetype of the Indian statesman-scholar: silver-streaked hair swept
    back, spectacles hanging on a cord at the chest, a dark blue Nehru

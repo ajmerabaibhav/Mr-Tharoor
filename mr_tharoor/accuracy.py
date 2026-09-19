@@ -1,4 +1,4 @@
-"""Is Mr Roy actually right? The only honest way to know is to ask you.
+"""Is Mr Tharoor actually right? The only honest way to know is to ask you.
 
 Every threshold in evidence.py is currently a judgement call. The report
 threshold, the pooling strength, the prior -- all of them are my estimate of
@@ -13,7 +13,7 @@ The loop is deliberately small enough to actually do:
 From that you get the two numbers that matter, and they are different
 questions with different costs:
 
-    PRECISION   of the things Mr Roy flagged, how many were really wrong?
+    PRECISION   of the things Mr Tharoor flagged, how many were really wrong?
                 Low precision means false accusations, and false accusations
                 are what make you stop opening the report.
 
@@ -62,7 +62,7 @@ class Label:
     contrast: str
     verdict: str
     clip: str | None = None  # path to your audio, so a label can be re-checked
-    lower_bound: float | None = None  # what Mr Roy believed at the time
+    lower_bound: float | None = None  # what Mr Tharoor believed at the time
     labelled_at: str = ""
 
     def __post_init__(self) -> None:
@@ -79,7 +79,7 @@ def _load() -> list[dict]:
         return json.loads(LABELS_FILE.read_text())
     except json.JSONDecodeError:
         dead = config.quarantine(LABELS_FILE)
-        print(f"mr-roy: labels were unreadable, kept a copy at {dead}")
+        print(f"mr-tharoor: labels were unreadable, kept a copy at {dead}")
         return []
 
 

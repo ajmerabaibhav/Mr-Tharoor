@@ -12,8 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mr_roy import dictionary as d
-from mr_roy import net
+from mr_tharoor import dictionary as d
+from mr_tharoor import net
 
 
 def test_commons_url_capitalisation():
@@ -64,7 +64,7 @@ def test_words_cannot_escape_the_cache_directory():
     """Words arrive from the command line and, later, from the speech
     recogniser. Both are untrusted. Before this, the word "../../../../tmp/x"
     wrote an mp3 outside the project entirely."""
-    from mr_roy import config
+    from mr_tharoor import config
 
     for hostile in ("../../../../tmp/roy-escape", "/etc/passwd", "..\\..\\win", "a/b/c"):
         key = d.cache_key(hostile)
@@ -90,7 +90,7 @@ def test_words_cannot_escape_the_cache_directory():
 def test_corrupt_index_is_kept_not_overwritten():
     """A half-written file used to read as empty, and the next save replaced
     every cached word with one entry. Silent, total cache loss."""
-    from mr_roy import config
+    from mr_tharoor import config
 
     real = config.INDEX_FILE.read_bytes() if config.INDEX_FILE.exists() else None
     try:

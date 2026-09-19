@@ -95,7 +95,7 @@ def record(seconds: float, destination: str, voice_processing: bool = True) -> d
         ok, error = node.setVoiceProcessingEnabled_error_(True, None)
         enabled = bool(ok) and bool(node.isVoiceProcessingEnabled())
         if not ok:
-            print(f"mr-roy: voice processing unavailable ({error}), recording raw")
+            print(f"mr-tharoor: voice processing unavailable ({error}), recording raw")
         elif hasattr(node, "setVoiceProcessingOtherAudioDuckingConfiguration_"):
             # Echo cancellation ducks everything else the Mac is playing, and
             # it does that by default. The symptom is a YouTube video going
@@ -112,7 +112,7 @@ def record(seconds: float, destination: str, voice_processing: bool = True) -> d
                 )
                 node.setVoiceProcessingOtherAudioDuckingConfiguration_(quiet)
             except Exception as exc:  # noqa: BLE001
-                print(f"mr-roy: could not disable audio ducking ({exc})")
+                print(f"mr-tharoor: could not disable audio ducking ({exc})")
 
     fmt = node.outputFormatForBus_(0)
     rate = int(fmt.sampleRate())
@@ -174,7 +174,7 @@ def record(seconds: float, destination: str, voice_processing: bool = True) -> d
             pass
 
     if failures["count"]:
-        print(f"mr-roy: {failures['count']} buffers failed to write")
+        print(f"mr-tharoor: {failures['count']} buffers failed to write")
     audio, file_rate = sf.read(raw_path, dtype="float32")
     channel_levels: list[float] = []
     if audio.ndim > 1:

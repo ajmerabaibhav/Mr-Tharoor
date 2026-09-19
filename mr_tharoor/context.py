@@ -1,4 +1,4 @@
-"""Should Mr Roy be listening right now?
+"""Should Mr Tharoor be listening right now?
 
 The microphone gate answers "is someone on a call". That covers meetings and
 dictation and costs nothing, because the operating system already knows. It

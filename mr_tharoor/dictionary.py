@@ -90,7 +90,7 @@ def _index() -> dict:
         # Do not silently start fresh: the next save would replace every
         # cached word with one entry. Keep the bytes, say so, refetch.
         dead = config.quarantine(config.INDEX_FILE)
-        print(f"mr-roy: cache index was unreadable, kept a copy at {dead}")
+        print(f"mr-tharoor: cache index was unreadable, kept a copy at {dead}")
         return {}
 
 

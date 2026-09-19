@@ -1,5 +1,5 @@
 [project]
-name = "mr-roy"
+name = "mr-tharoor"
 version = "0.1.0"
 description = "A local pronunciation coach for macOS. Hears how you actually talk, and plays you the words you got wrong."
 readme = "README.md"
@@ -25,11 +25,12 @@ dev = ["ruff>=0.5"]
 Homepage = "https://github.com/ajmerabaibhav/Mr-Roy-"
 
 [project.scripts]
-roy = "mr_roy.cli:main"
+tharoor = "mr_tharoor.cli:main"
+roy = "mr_tharoor.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["mr_roy*"]
+include = ["mr_tharoor*"]

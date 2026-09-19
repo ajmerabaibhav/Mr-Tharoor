@@ -9,8 +9,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mr_roy import streaks
-from mr_roy.streaks import Finding
+from mr_tharoor import streaks
+from mr_tharoor.streaks import Finding
 
 TODAY = date(2026, 9, 15)
 
@@ -58,7 +58,7 @@ def test_two_days_is_not_yet_a_habit(tmp: Path):
 
 
 def test_three_days_in_five_is_genuine(tmp: Path):
-    """Three of five days and Mr Roy is allowed to call it a real problem."""
+    """Three of five days and Mr Tharoor is allowed to call it a real problem."""
     fresh_history(tmp)
     seed([0, 2, 4])
     verdict = next(v for v in streaks.verdicts(TODAY) if v.word == "version")

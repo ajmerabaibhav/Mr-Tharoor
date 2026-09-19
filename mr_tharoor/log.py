@@ -28,14 +28,14 @@ from pathlib import Path
 from . import config
 
 LOG_DIR = config.ROOT / "logs"
-LOG_FILE = LOG_DIR / "mr-roy.log"
+LOG_FILE = LOG_DIR / "mr-tharoor.log"
 MAX_BYTES = 2_000_000
 BACKUPS = 3
 
 _configured = False
 
 
-ROOT_NAME = "mr-roy"
+ROOT_NAME = "mr-tharoor"
 
 
 def get(name: str = ROOT_NAME) -> logging.Logger:
@@ -66,7 +66,7 @@ def get(name: str = ROOT_NAME) -> logging.Logger:
 
     to_screen = logging.StreamHandler()
     to_screen.setLevel(logging.WARNING)  # silence is success
-    to_screen.setFormatter(logging.Formatter("mr-roy: %(levelname)s: %(message)s"))
+    to_screen.setFormatter(logging.Formatter("mr-tharoor: %(levelname)s: %(message)s"))
 
     logger.addHandler(to_file)
     logger.addHandler(to_screen)
