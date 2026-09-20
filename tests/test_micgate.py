@@ -91,7 +91,39 @@ def test_bluetooth_fallback():
     print("bluetooth fallback          ok")
 
 
+def test_dictation_helper_is_not_a_stranger():
+    """A dictation app's helper must reach SKIP, not ALWAYS.
+
+    Wispr Flow's Electron audio service holds the device as
+    com.electron.wispr-flow.helper. Matched exactly, that read as an unknown
+    app on the mic: the listener took the ALWAYS branch and recorded 30
+    seconds through the voice path, duplicating audio Wispr had already
+    stored and ducking every other sound on the Mac.
+    """
+    from mr_tharoor import context
+
+    real_users = micgate.mic_users
+    try:
+        micgate.mic_users = lambda: [
+            micgate.MicUser(pid=1, bundle_id="com.electron.wispr-flow.helper")
+        ]
+        decision = context.decide()
+        assert decision.mode == context.LISTEN_SKIP, (
+            f"wispr helper gave {decision.mode}: {decision.reason}"
+        )
+
+        # A genuine stranger on the mic must still record.
+        micgate.mic_users = lambda: [micgate.MicUser(pid=2, bundle_id="us.zoom.xos")]
+        assert context.decide().mode == context.LISTEN_ALWAYS, "a call must still record"
+    finally:
+        micgate.mic_users = real_users
+    print("wispr helper -> SKIP        ok")
+
+
 def main() -> int:
+    # Needs no device, so it runs before anything that can skip on a busy one.
+    test_dictation_helper_is_not_a_stranger()
+
     assert micgate.has_process_api, (
         "process-object API unavailable; this Mac falls back to the blunt "
         "device-running check and cannot exclude our own stream"

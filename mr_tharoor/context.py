@@ -119,12 +119,12 @@ AMBIGUOUS_HOLDERS = frozenset(
     }
 )
 
-# Dictation apps. None of them ever holds the microphone under its own name:
-# they all capture through CoreSpeech. But if one of them is RUNNING and
-# CoreSpeech has the microphone, it is that app dictating rather than a Siri
-# wake-word check, and dictation is the cleanest speech this tool ever gets --
-# one speaker, close to the mic, talking deliberately. So record it outright
-# instead of spending half a second deciding whether to.
+# Dictation apps. Two ways one of these shows up on the microphone: it holds
+# the device itself (Wispr Flow does, as com.electron.wispr-flow.helper -- see
+# dictation_app below), or CoreSpeech holds it while the app is running, which
+# means that app dictating rather than a Siri wake-word check. Either way it is
+# the cleanest speech this tool ever gets -- one speaker, close to the mic,
+# talking deliberately -- and Wispr has already stored it, so we skip.
 DICTATION_APPS = frozenset(
     {
         "com.electron.wispr-flow",
@@ -167,15 +167,36 @@ def running_apps() -> set[str]:
         return set()
 
 
+def dictation_app(bundle: str) -> str | None:
+    """Which dictation app a microphone holder belongs to, if any.
+
+    MEASURED: the claim below that these apps never hold the microphone under
+    their own name is wrong. Wispr Flow captures through CoreSpeech sometimes
+    and through its own Electron audio service the rest of the time, and that
+    service holds the device as com.electron.wispr-flow.helper. An exact-match
+    test saw an unknown app on the mic, took the ALWAYS branch, and recorded 30
+    seconds of the dictation Wispr had already stored -- through the voice path,
+    which ducks every other sound the Mac is making. Match a helper to its
+    parent so the SKIP branch gets its chance.
+    """
+    for app in DICTATION_APPS:
+        if bundle == app or bundle.startswith(app + "."):
+            return app
+    return None
+
+
 def dictating() -> str | None:
     """Is a dictation app the reason the microphone is open?
 
     Wispr Flow shows an orange mic while it listens, and that is exactly the
-    moment worth recording. It never appears as the microphone holder itself,
-    so the test is: a system speech service has the mic, AND a dictation app
-    is running. Siri alone satisfies the first and not the second.
+    moment worth recording. Two ways to see it: the app (or a helper of it)
+    holds the device itself, or a system speech service holds it while the app
+    is running. Siri alone satisfies neither.
     """
     holders = {h.bundle_id or "" for h in micgate.mic_users()}
+    direct = sorted(app for h in holders if (app := dictation_app(h)))
+    if direct:
+        return direct[0]
     if not holders & AMBIGUOUS_HOLDERS:
         return None
     present = running_apps() & DICTATION_APPS
@@ -220,7 +241,12 @@ def playing_media(front: str | None = None) -> str | None:
 def decide() -> Decision:
     """The whole policy, in the order that costs least."""
     holders = micgate.mic_users()
-    real = [h for h in holders if (h.bundle_id or "") not in AMBIGUOUS_HOLDERS]
+    real = [
+        h
+        for h in holders
+        if (h.bundle_id or "") not in AMBIGUOUS_HOLDERS
+        and not dictation_app(h.bundle_id or "")
+    ]
     if real:
         return Decision(
             LISTEN_ALWAYS,

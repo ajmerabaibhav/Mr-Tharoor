@@ -39,6 +39,13 @@ for the phrasing side; the pronunciation side has nothing yet.
 
 ### Fixed
 
+- Recording over every Wispr dictation: Wispr Flow does not only capture
+  through CoreSpeech. Its Electron audio service holds the device as
+  `com.electron.wispr-flow.helper`, which matched nothing, read as a stranger
+  on the mic, and took the ALWAYS branch -- 30 seconds through the voice path,
+  duplicating audio Wispr had already stored, holding the mic ~30s past the
+  end of each dictation and ducking everything else the Mac was playing.
+  Holders are now matched to their parent app. `2026-09-20`
 - Video audio going quiet: the listener peeked, heard the video through the
   speakers, and recorded via the voice path. Any non-call sound now blocks
   peeking; reading-aloud capture is raw; dictation is skipped because Wispr
