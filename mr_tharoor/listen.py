@@ -268,15 +268,15 @@ def expected_phonemes(text: str) -> tuple[list[str], list[str]]:
     return phonemes, words
 
 
-def _build(text: str, choice: dict[str, int]) -> tuple[list[str], list[str], list[str]]:
+def _build(text: str, choice: dict[int, int]) -> tuple[list[str], list[str], list[str]]:
     phonemes: list[str] = []
     owner: list[str] = []
     words: list[str] = []
-    for word in _WORD.findall(text.lower()):
+    for occurrence, word in enumerate(_WORD.findall(text.lower().replace("’", "'"))):
         forms = variants(word)
         if not forms:
             continue  # unknown word: skip rather than guess and mis-score
-        form = forms[min(choice.get(word, 0), len(forms) - 1)]
+        form = forms[min(choice.get(occurrence, 0), len(forms) - 1)]
         for phone in form:
             phonemes.append(phone)
             owner.append(word)
@@ -318,17 +318,22 @@ def expected_with_words(
     if actual is None:
         return _build(text, {})
 
-    choice: dict[str, int] = {}
+    choice: dict[int, int] = {}
     best = _score(_build(text, choice)[0], actual)
-    candidates = [w for w in dict.fromkeys(_WORD.findall(text.lower())) if len(variants(w)) > 1]
+    candidates = [(i, w) for i, w in enumerate(_WORD.findall(text.lower().replace("’", "'")))
+                  if len(variants(w)) > 1]
     # Each trial is a full alignment. On a 500-word dictation that is 2,000
     # phonemes a trial; forty trials is fine, four hundred is not.
-    for word in candidates[:MAX_VARIANT_TRIALS]:
+    trials = 0
+    for occurrence, word in candidates:
         forms = variants(word)
         if len(forms) < 2:
             continue
         for index in range(1, len(forms)):
-            trial = {**choice, word: index}
+            if trials >= MAX_VARIANT_TRIALS:
+                return _build(text, choice)
+            trials += 1
+            trial = {**choice, occurrence: index}
             score = _score(_build(text, trial)[0], actual)
             if score > best:
                 best, choice = score, trial
@@ -427,22 +432,26 @@ def _heard_window(audio) -> list[Token]:
     seconds_per_frame = len(audio) / SAMPLE_RATE / len(best)
     blank = model.config.pad_token_id
 
+    return _collapse_frames(best.tolist(), confidences.tolist(), vocab, blank, seconds_per_frame)
+
+
+def _collapse_frames(indices: list[int], confidences: list[float], vocab: dict,
+                     blank: int, seconds_per_frame: float) -> list[Token]:
+    """A phone's score uses its whole CTC run, not just the uncertain onset."""
+    from itertools import groupby
+
     tokens: list[Token] = []
-    previous = None
-    for frame, (index, confidence) in enumerate(
-        zip(best.tolist(), confidences.tolist())
-    ):
-        if index == blank or index == previous:  # CTC collapse
-            previous = index
+    for index, run in groupby(enumerate(indices), key=lambda item: item[1]):
+        frames = [frame for frame, _ in run]
+        if index == blank:
             continue
-        previous = index
         symbol = normalise(vocab.get(index, ""))
-        if symbol and not symbol.startswith("<"):
+        if symbol and symbol != "|" and not symbol.startswith("<"):
             tokens.append(
                 Token(
                     symbol=symbol,
-                    confidence=float(confidence),
-                    second=round(frame * seconds_per_frame, 3),
+                    confidence=sum(confidences[f] for f in frames) / len(frames),
+                    second=round((frames[0] + frames[-1]) / 2 * seconds_per_frame, 3),
                 )
             )
     return tokens
@@ -607,10 +616,7 @@ def transcribe(wav_path: str) -> list[dict]:
     amounts of speech misheard you; a person in a meeting would too. So a low
     word probability is kept and surfaced, not discarded.
     """
-    try:
-        model = _whisper()
-    except Exception:
-        return []
+    model = _whisper()  # A broken model is a job failure, not a silent day.
     segments, _ = model.transcribe(
         wav_path, language="en", vad_filter=True, word_timestamps=True
     )
@@ -623,6 +629,7 @@ def transcribe(wav_path: str) -> list[dict]:
             {
                 "word": w.word.strip(),
                 "start": w.start,
+                "end": w.end,
                 "probability": w.probability,
                 "misheard": w.probability < MISHEARD_PROBABILITY,
             }
@@ -727,7 +734,35 @@ def align(expected: list[str], actual: list[Token]) -> list[Diff]:
     return diffs
 
 
-def analyse(wav_path: str, text: str) -> dict:
+MIN_PHONE_CONFIDENCE = 0.80
+MIN_ALIGNMENT_AGREEMENT = 0.60
+# These words routinely use weak vowels in connected speech. Citation-form
+# vowel differences are not reliable pronunciation errors.
+WEAK_WORDS = frozenset({"a", "an", "and", "as", "at", "can", "had", "has", "have",
+                        "shall", "than", "that", "to", "was", "were", "you"})
+
+
+def _locally_supported(diff: Diff, diffs: list[Diff], expected: list[str]) -> bool:
+    """Require two matching neighbouring phones, with no nearby alignment debris."""
+    if diff.confidence < MIN_PHONE_CONFIDENCE:
+        return False
+    if diff.expected in VOWELS and diff.word in WEAK_WORDS:
+        return False
+    neighbours = set(range(max(0, diff.index - 2), min(len(expected), diff.index + 3)))
+    neighbours.discard(diff.index)
+    if len(neighbours) < 2:
+        return False
+    for other in diffs:
+        if other is diff:
+            continue
+        if other.actual == "ɾ" and other.expected in ("t", "d"):
+            continue
+        if other.index in neighbours or other.index == diff.index:
+            return False
+    return True
+
+
+def analyse(wav_path: str, text: str, *, excluded_words: set[str] | None = None) -> dict:
     """Everything about one recording, with the text already known.
 
     Quality is measured first and reported alongside. A finding from audio
@@ -735,22 +770,51 @@ def analyse(wav_path: str, text: str) -> dict:
     identical to a real one.
     """
     quality = audio_quality(wav_path)
-    actual = heard(wav_path)
+    actual = heard(wav_path) if quality["usable"] else []
     expected, owner, words = expected_with_words(text, actual)
     diffs = align(expected, actual)
     for diff in diffs:  # name the word each difference happened in
         if 0 <= diff.index < len(owner):
             diff.word = owner[diff.index]
-    scored = [d for d in diffs if d.scored]
+    agreement = max(0.0, 1 - (len(diffs) / max(len(expected), 1)))
+    usable = quality["usable"] and agreement >= MIN_ALIGNMENT_AGREEMENT
+    excluded_words = excluded_words or set()
+    transcript_words = _WORD.findall(text.lower().replace("’", "'"))
+    excluded_words = set(excluded_words)
+    for index, word in enumerate(transcript_words):
+        if not variants(word):
+            # Removing a name from the dictionary reference must not shift
+            # its sounds onto either neighbouring word.
+            excluded_words.update(transcript_words[max(0, index - 1):index + 2])
+    trials = 0
+    for word in transcript_words:
+        alternatives = max(0, len(variants(word)) - 1)
+        trials += alternatives
+        if alternatives and trials > MAX_VARIANT_TRIALS:
+            excluded_words.add(word)  # Cannot reject a valid form we never tested.
+    scored = [d for d in diffs if usable and d.scored and d.word not in excluded_words
+              and _locally_supported(d, diffs, expected)]
+    scored = [d for d in scored if d.contrast != "final-d"
+              or d.index == len(owner) - 1 or owner[d.index + 1] != d.word]
 
     # How many chances each (word, sound) had in this recording. Without it a
     # finding is a bare count, and 11 flags means nothing until you know
     # whether it was 11 out of 15 or 11 out of 166.
     chances: dict[tuple[str, str], int] = {}
+    contrast_chances: dict[tuple[str, str], int] = {}
     for position, phoneme in enumerate(expected):
-        if position < len(owner):
+        if usable and position < len(owner) and owner[position] not in excluded_words:
             key = (owner[position], phoneme)
             chances[key] = chances.get(key, 0) + 1
+            for contrast, (want, _) in CONTRASTS.items():
+                if want != phoneme:
+                    continue
+                if phoneme in VOWELS and owner[position] in WEAK_WORDS:
+                    continue
+                if contrast == "final-d" and position + 1 < len(owner) and owner[position + 1] == owner[position]:
+                    continue
+                contrast_key = owner[position], contrast
+                contrast_chances[contrast_key] = contrast_chances.get(contrast_key, 0) + 1
     matched = sum(
         1 for d in diffs if d.expected is not None and d.actual is not None
     )
@@ -758,6 +822,7 @@ def analyse(wav_path: str, text: str) -> dict:
         "path": wav_path,
         "quality": quality,
         "chances": chances,
+        "contrast_chances": contrast_chances,
         "text": text,
         "words": words,
         "expected_count": len(expected),
@@ -767,5 +832,5 @@ def analyse(wav_path: str, text: str) -> dict:
         "diffs": diffs,
         "scored": scored,
         "substitutions": matched,
-        "agreement": 1 - (len(diffs) / max(len(expected), 1)),
+        "agreement": agreement,
     }

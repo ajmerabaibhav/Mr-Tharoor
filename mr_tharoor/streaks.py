@@ -78,8 +78,9 @@ class Finding:
     word: str
     contrast: str  # e.g. "v->w" or "stress"
     said: int  # times the word came up
-    wrong: int  # times it was wrong
+    wrong: float  # may be confidence-weighted evidence
     confidence: float
+    analysis_version: int = 0
 
     @property
     def error_rate(self) -> float:
@@ -141,14 +142,23 @@ def record_day(day: date, findings: list[Finding]) -> None:
     it has to survive to be pooled later.
     """
     history = _load()
-    history[day.isoformat()] = [
-        asdict(f) for f in findings if f.confidence >= STORAGE_FLOOR
-    ]
+    merged: dict[tuple[str, str, int], Finding] = {}
+    for finding in findings:
+        if finding.confidence < STORAGE_FLOOR:
+            continue
+        key = finding.word, finding.contrast, finding.analysis_version
+        if key in merged:
+            old = merged[key]
+            merged[key] = replace(old, said=old.said + finding.said,
+                                  wrong=old.wrong + finding.wrong * finding.confidence)
+        else:
+            merged[key] = replace(finding, wrong=finding.wrong * finding.confidence, confidence=1.0)
+    history[day.isoformat()] = [asdict(f) for f in merged.values()]
     _save(history)
 
 
 def observations(
-    window_days: int = evidence.LOOKBACK_DAYS, today: date | None = None
+    window_days: int = evidence.LOOKBACK_DAYS, today: date | None = None, min_version: int = 0
 ) -> list[evidence.Observation]:
     """Everything on file inside the window, as evidence.
 
@@ -158,6 +168,10 @@ def observations(
     """
     today = today or date.today()
     cutoff = today - timedelta(days=window_days)
+    from . import accuracy
+
+    dismissed = {(label.day, label.word, label.contrast) for label in accuracy.labels()
+                 if label.verdict == accuracy.FALSE_ALARM}
     out: list[evidence.Observation] = []
     for day_str, items in _load().items():
         try:
@@ -167,6 +181,10 @@ def observations(
         if day < cutoff or day > today:
             continue
         for item in items:
+            if item.get("analysis_version", 0) < min_version:
+                continue
+            if (day_str, item["word"], item["contrast"]) in dismissed:
+                continue
             out.append(
                 evidence.Observation(
                     day=day,
@@ -204,6 +222,8 @@ def verdicts(today: date | None = None, window: int = WINDOW_DAYS) -> list[Verdi
     wrong_total: Counter = Counter()
     for day in recent:
         for item in history.get(day, []):
+            if item["wrong"] <= 0:
+                continue
             seen[_key(item)] += 1
             wrong_total[_key(item)] += item["wrong"]
 
@@ -211,6 +231,8 @@ def verdicts(today: date | None = None, window: int = WINDOW_DAYS) -> list[Verdi
     previously: Counter = Counter()
     for day in older:
         for item in history.get(day, []):
+            if item["wrong"] <= 0:
+                continue
             previously[_key(item)] += 1
 
     out: list[Verdict] = []
@@ -219,7 +241,7 @@ def verdicts(today: date | None = None, window: int = WINDOW_DAYS) -> list[Verdi
         days_seen = seen[key]
         clean_run = _clean_run(history, key, today, window)
 
-        if days_seen == 0 and previously[key] >= CHRONIC_DAYS:
+        if days_seen == 0 and previously[key] >= CHRONIC_DAYS and clean_run >= FIXED_AFTER_CLEAN_DAYS:
             status = "fixed"
             message = f"You have not said {word} wrong in {clean_run} days. That one is done."
         elif days_seen >= CHRONIC_DAYS:
@@ -264,7 +286,8 @@ def _clean_run(history: dict, key: tuple[str, str], today: date, window: int) ->
         day = (today - timedelta(days=i)).isoformat()
         if day not in history:
             break  # no recording that day proves nothing either way
-        if any(_key(item) == key for item in history[day]):
+        relevant = [item for item in history[day] if _key(item) == key]
+        if not relevant or any(item["wrong"] > 0 for item in relevant):
             break
         run += 1
     return run

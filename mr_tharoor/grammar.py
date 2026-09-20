@@ -47,20 +47,9 @@ AUXILIARIES = {"is", "are", "was", "were", "am", "be", "been", "being",
 # Kept explicit because they are the highest-value catches and the diff alone
 # cannot tell "revert back -> reply" from an ordinary rewording.
 KNOWN_PHRASES = {
-    "revert back": "reply",
     "discuss about": "discuss",
-    "prepone": "bring forward",
-    "do the needful": "do what is needed",
-    "i am having a doubt": "I have a question",
-    "having a doubt": "have a question",
-    "out of station": "out of town",
-    "the same": "it",
-    "kindly": "please",
-    "updation": "update",
     "one of my friend": "one of my friends",
     "cope up with": "cope with",
-    "order for": "order",
-    "return back": "return",
 }
 
 _WORD = re.compile(r"[a-z']+")
@@ -81,7 +70,7 @@ RULES = {
     "preposition": "The verb governs which preposition follows it, and it is not free choice.",
     "number": "The noun and its determiner must agree in number.",
     "verb": "The verb must agree with its subject, in person and in tense.",
-    "phrase": "A fixed expression that reads as Indian English to other ears.",
+    "phrase": "Check the construction in the recording before practising the suggested form.",
 }
 
 
@@ -96,6 +85,7 @@ class GrammarFinding:
     source: str  # which dictation
     change: str = ""  # "add", "use", "drop"
     word: str = ""  # the word to add, use, or drop
+    basis: str = "legacy"  # rule | user_edit; old rewrite-only findings stay archived
 
     @property
     def headline(self) -> str:
@@ -131,7 +121,7 @@ def _describe(before: list[str], after: list[str]) -> tuple[str, str]:
 
 
 def _words(text: str) -> list[str]:
-    return _WORD.findall(text.lower())
+    return _WORD.findall(text.lower().replace("’", "'"))
 
 
 def _is_filler_only(words: list[str]) -> bool:
@@ -186,7 +176,11 @@ def _classify(before: list[str], after: list[str]) -> str | None:
 
 def _same_stem(x: str, y: str) -> bool:
     shorter, longer = sorted((x, y), key=len)
-    return len(shorter) >= 3 and longer.startswith(shorter[: max(3, len(shorter) - 2)])
+    # Shared first letters (computer/company, thing/think) prove nothing.
+    return len(shorter) >= 3 and (
+        longer in {shorter + "s", shorter + "es", shorter + "ed", shorter + "ing"}
+        or (shorter.endswith("y") and longer == shorter[:-1] + "ies")
+    )
 
 
 def _phrase_window(words: list[str], start: int, end: int, pad: int = CONTEXT) -> str:
@@ -194,19 +188,36 @@ def _phrase_window(words: list[str], start: int, end: int, pad: int = CONTEXT) -
     return " ".join(words[lo:hi])
 
 
-def compare(heard: str, meant: str, source: str = "") -> list[GrammarFinding]:
+def check(text: str, source: str = "") -> list[GrammarFinding]:
+    """Small explicit grammar rules on the raw transcript, with no LLM rewrite."""
+    words = _words(text)
+    normalized = " ".join(words)
+    out = []
+    rules = [(re.escape(before), after, "phrase") for before, after in KNOWN_PHRASES.items()]
+    rules += [
+        (r"(he|she|it) don't", r"\1 doesn't", "verb"),
+        (r"(he|she|it) are", r"\1 is", "verb"),
+        (r"(we|they|you) is", r"\1 are", "verb"),
+        (r"i is", "i am", "verb"),
+    ]
+    for pattern, replacement, kind in rules:
+        for match in re.finditer(r"\b(?:" + pattern + r")\b", normalized):
+            said = match.group()
+            fixed = match.expand(replacement)
+            change, word = _describe(_words(said), _words(fixed))
+            out.append(GrammarFinding(kind, said, fixed, text.strip()[:160], source,
+                                      change=change, word=word, basis="rule"))
+    return out
+
+
+def compare(heard: str, meant: str, source: str = "", *, edited: bool = False) -> list[GrammarFinding]:
     """Corrections between what was heard and what was meant."""
+    if not edited:
+        return check(heard, source)
     hw, mw = _words(heard), _words(meant)
     if not hw or not mw:
         return []
-    out: list[GrammarFinding] = []
-
-    # Fixed phrases first, on the raw text, so they are never split by the diff.
-    lowered = " " + " ".join(hw) + " "
-    for phrase, fix in KNOWN_PHRASES.items():
-        if f" {phrase} " in lowered and phrase not in " ".join(mw):
-            out.append(GrammarFinding("phrase", phrase, fix, heard.strip()[:160], source,
-                                      change="use", word=fix))
+    out = check(heard, source)
 
     matcher = difflib.SequenceMatcher(None, hw, mw, autojunk=False)
     opcodes = matcher.get_opcodes()
@@ -240,8 +251,9 @@ def compare(heard: str, meant: str, source: str = "") -> list[GrammarFinding]:
         if said == fixed:
             continue
         change, word = _describe(before, after)
-        out.append(GrammarFinding(kind, said, fixed, heard.strip()[:160], source,
-                                  change=change, word=word))
+        if not any(f.said in said for f in out):
+            out.append(GrammarFinding(kind, said, fixed, heard.strip()[:160], source,
+                                      change=change, word=word, basis="user_edit"))
     return out
 
 
@@ -249,8 +261,15 @@ def summarise(findings: list[GrammarFinding], limit: int = 8) -> list[dict]:
     """The habits, not the incidents. Same correction twice is a pattern."""
     counts: Counter = Counter()
     example: dict[tuple[str, str, str], GrammarFinding] = {}
+    seen: set[tuple] = set()
     for f in findings:
+        if f.basis == "legacy":
+            continue
         key = (f.kind, f.said, f.should_be)
+        occurrence = (*key, f.source)
+        if f.source and occurrence in seen:
+            continue
+        seen.add(occurrence)
         counts[key] += 1
         example.setdefault(key, f)
     rows = []

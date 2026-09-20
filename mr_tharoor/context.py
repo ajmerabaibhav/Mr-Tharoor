@@ -245,6 +245,10 @@ def playing_media(front: str | None = None) -> str | None:
 def decide() -> Decision:
     """The whole policy, in the order that costs least."""
     holders = micgate.mic_users()
+    if not holders and micgate.is_mic_in_use():
+        # Older CoreAudio and some Bluetooth devices only expose a boolean.
+        # An empty process list in that case does not mean the device is free.
+        return Decision(LISTEN_NEVER, "microphone activity detected without a known owner", frontmost())
     real = [
         h
         for h in holders
@@ -293,8 +297,8 @@ def decide() -> Decision:
             # else the Mac is playing. So: do nothing, deliberately.
             return Decision(LISTEN_SKIP, f"{app} is recording this for us", front)
         return Decision(
-            LISTEN_SAMPLE,
-            f"{holders[0].bundle_id} has the mic, which may just be Siri",
+            LISTEN_NEVER,
+            f"{holders[0].bundle_id} has the microphone; waiting until it is free",
             front,
         )
     if front in READING_APPS:

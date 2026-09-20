@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff>=0.5"]
+dev = ["ruff>=0.5", "pytest>=8"]
 
 [project.urls]
 Homepage = "https://github.com/ajmerabaibhav/Mr-Roy-"

@@ -72,8 +72,8 @@ def test_a_beaten_habit_is_reported_as_fixed(tmp: Path):
     """Being told you beat one is the only reason anyone opens this twice."""
     fresh_history(tmp)
     seed([5, 6, 7, 8])  # chronic last week
-    for n in (0, 1, 2, 3, 4):  # clean all week, but still recording
-        streaks.record_day(TODAY - timedelta(days=n), [])
+    for n in (0, 1, 2, 3, 4):  # the same word was actually observed correctly
+        streaks.record_day(TODAY - timedelta(days=n), [Finding("version", "v->w", 5, 0, 1.0)])
     verdict = next(v for v in streaks.verdicts(TODAY) if v.word == "version")
     assert verdict.status == "fixed", verdict
     print("beaten habit -> fixed       ok")
@@ -85,8 +85,7 @@ def test_a_holiday_is_not_improvement(tmp: Path):
     seed([5, 6, 7, 8])
     # days 0-4 simply never recorded, laptop shut
     verdict = next((v for v in streaks.verdicts(TODAY) if v.word == "version"), None)
-    assert verdict is not None
-    assert verdict.status == "fixed"
+    assert verdict is None, "unobserved days must not label a habit fixed"
     assert streaks._clean_run({}, ("version", "v->w"), TODAY, 5) == 0, (
         "a day with no recording must not count toward a clean run"
     )

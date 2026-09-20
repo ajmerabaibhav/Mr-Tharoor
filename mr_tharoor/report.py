@@ -100,7 +100,7 @@ def _grammar_html(habits: list[dict]) -> str:
         action = html.escape(f.instruction) if f.instruction else ""
         return (
             '<div class="ab"><div class="who">'
-            f'<div class="word">you said &ldquo;{html.escape(h["said"])}&rdquo;</div>'
+            f'<div class="word">transcript: &ldquo;{html.escape(h["said"])}&rdquo;</div>'
             + (f'<div class="action">{action}</div>' if action else "")
             + f'<div class="fix">&ldquo;<b>{html.escape(h["should_be"])}</b>&rdquo;'
             f'<span class="kind">{html.escape(h["kind"])} &middot; {h["times"]}x</span></div>'
@@ -112,7 +112,7 @@ def _grammar_html(habits: list[dict]) -> str:
     items = "".join(one(h) for h in habits)
     return (
         '<h2 class="sect">Phrasing</h2>'
-        '<div class="sub2">A matter of construction rather than sound. These are turns of phrase you have reached for more than once this month, set beside what the sentence actually wanted.</div>'
+        '<div class="sub2">Repeated suggestions from local rules or your own edits. Check the transcript against what you actually said before practising.</div>'
         f'<div class="card">{items}</div>'
     )
 
@@ -120,7 +120,7 @@ def _grammar_html(habits: list[dict]) -> str:
 def build_html(findings: list, day: date, grammar: list[dict] | None = None) -> str:
     grouped = daily.group(findings, day)
     bounds = daily.trustworthy_contrasts(findings, day)
-    total = len(findings)
+    total = sum(len(items) for items in grouped.values())
     rows = []
     for contrast, items in grouped.items():
         seen: set[str] = set()
@@ -138,17 +138,18 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None) -> 
         blocks = "".join(
             f'<div class="ab"><div class="who"><div class="word">{html.escape(f.word)}'
             + (f' <span class="ipa">{html.escape(f.ipa)}</span>' if f.ipa else "")
-            + f'</div><div class="ctx">{html.escape(f.sentence[:110])}</div></div>'
+            + f'</div><div class="ctx">Transcript: {html.escape(f.sentence[:110])}</div>'
+            + f'<div class="ctx">{"Wispr dictation" if "wispr-" in f.source else "Reading audio"} · phoneme model score {f.confidence:.0%} (not measured accuracy)</div></div>'
             + '<div class="buttons">'
             + _audio_tag(f.clip_path, "▶ You", "you")
-            + _audio_tag(f.correct_path, "▶ Correct", "right")
+            + _audio_tag(f.correct_path, "▶ Reference", "right")
             + "</div></div>"
             for f in examples
         )
         rows.append(
             f'<div class="card"><div class="card-head"><div class="swap">'
             f'<span class="bad">/{html.escape(first.said)}/</span>'
-            f'<span class="arrow">you said, should be</span>'
+            f'<span class="arrow">detected → reference</span>'
             f'<span class="good">/{html.escape(first.should_be)}/</span>'
             f'<span class="n">{len(items)}x &middot; {_sureness(bounds.get(contrast, 0.0))}</span></div>'
             f'<div class="words">{CONTRAST_NAMES.get(contrast, contrast)}'
@@ -158,10 +159,10 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None) -> 
 
     body = "".join(rows) or (
         '<div class="card"><div class="card-head"><div class="words">'
-        "Nothing worth reporting. Either a creditable day or a quiet one, "
-        "and I shall not manufacture a fault to fill a page.</div></div></div>"
+        "No pronunciation pattern passed the evidence checks. This may mean clear speech, "
+        "too little audio, or uncertain recognition.</div></div></div>"
     )
-    best = max(bounds.values(), default=0.0)
+    best = max((bounds[c] for c in grouped), default=0.0)
     mood = "clear" if best >= 0.15 else ("likely" if best >= 0.08 else "watch")
     name = config.user_name()
     greeting = f"Good morning, {name}."
@@ -210,8 +211,24 @@ def open_report(day: date | None = None) -> str | None:
     path = config.REPORTS_DIR / f"{day.isoformat()}.html"
     if not path.exists():
         return None
-    subprocess.run(["open", str(path)], capture_output=True)
-    return str(path)
+    result = subprocess.run(["open", str(path)], capture_output=True)
+    return str(path) if result.returncode == 0 else None
+
+
+def latest_day(before: date | None = None) -> date | None:
+    """Most recent completed report before today, even after a weekend away."""
+    import json
+
+    before = before or date.today()
+    for marker in sorted(config.REPORTS_DIR.glob("*-analysis.json"), reverse=True):
+        try:
+            day = date.fromisoformat(marker.name[:10])
+            version = json.loads(marker.read_text()).get("version", 0)
+        except (ValueError, TypeError):
+            continue
+        if day < before and version >= daily.ANALYSIS_VERSION and marker.with_name(f"{day}.html").exists():
+            return day
+    return None
 
 
 TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
@@ -255,7 +272,7 @@ font:inherit;font-size:.8rem;cursor:pointer;color:var(--ink2)}
 <div class="greet">{{GREETING}}</div>
 <h1>What I heard you say</h1>
 <div class="remark">{{REMARK}}</div>
-<div class="sub">{{DATE}} &middot; {{TOTAL}} mistakes across {{SOUNDS}} sounds &middot; press a button to hear it</div>
+<div class="sub">{{DATE}} &middot; {{TOTAL}} examples across {{SOUNDS}} sound patterns &middot; compare your voice with the reference</div>
 <h2 class="sect">Pronunciation</h2>
 {{CARDS}}
 {{GRAMMAR}}

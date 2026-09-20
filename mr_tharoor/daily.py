@@ -36,6 +36,7 @@ from . import clean, config, dictionary, listen
 CLIP_PAD_BEFORE = 0.35
 CLIP_PAD_AFTER = 0.45
 MIN_CONFIDENCE = 0.45
+ANALYSIS_VERSION = 2
 
 # A sound is shown when we are 95% sure it goes wrong at least this often.
 # Measured on a real day: /th/ fires on 22% of its chances (a habit), while
@@ -61,6 +62,7 @@ class Finding:
     ipa: str | None = None
     quality: float = 1.0  # how clean the audio was, 0 to 1
     chances: int = 1  # how many times this sound could have occurred here
+    analysis_version: int = 0  # old reports lack complete opportunity counts
 
     @property
     def evidence_weight(self) -> float:
@@ -118,7 +120,8 @@ def to_m4a(wav_path: str) -> str | None:
     return out if result.returncode == 0 and Path(out).exists() else None
 
 
-def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
+def findings_for(wav_path: str, text: str, label: str, *, tallies: list | None = None,
+                 excluded_words: set[str] | None = None, offset: float = 0.0) -> list[Finding]:
     """Every scored mistake in one recording, with your clip cut.
 
     Does NOT fetch the correct pronunciation here. That is a network call per
@@ -126,8 +129,7 @@ def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
     words -- it was the single biggest reason a 40 minute day never finished.
     The report fetches audio only for the handful of words it actually shows.
     """
-    result = listen.analyse(wav_path, text)
-    enhanced, rate = _load_enhanced(wav_path)
+    result = listen.analyse(wav_path, text, excluded_words=excluded_words)
     # Noisy audio does not get thrown away, it gets discounted. The pooling in
     # evidence.py already knows how to accumulate weak evidence; what it cannot
     # do is recover evidence a gate deleted.
@@ -141,6 +143,20 @@ def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
     quality_weight = result["quality"].get("weight", 1.0) * listen.agreement_weight(
         result["agreement"]
     )
+    if tallies is not None:
+        from . import streaks
+
+        # Count ALL opportunities once, including words with no finding.
+        # Repeating the word's total on every error both duplicated counts
+        # and completely omitted recordings that were pronounced correctly.
+        for (word, contrast), count in result["contrast_chances"].items():
+            errors = sum(d.confidence * quality_weight for d in result["scored"]
+                         if d.word == word and d.contrast == contrast)
+            tallies.append(streaks.Finding(word, contrast, count, errors, 1.0,
+                                           analysis_version=ANALYSIS_VERSION))
+    if not result["scored"] or quality_weight <= 0:
+        return []
+    enhanced, rate = _load_enhanced(wav_path)
     out: list[Finding] = []
     for index, diff in enumerate(result["scored"]):
         # The gate is on the DETECTOR's confidence alone. Noise is accounted
@@ -160,7 +176,7 @@ def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
                 contrast=diff.contrast or "",
                 said=diff.actual or "",
                 should_be=diff.expected or "",
-                second=diff.second,
+                second=diff.second + offset,
                 confidence=diff.confidence,
                 source=label,
                 sentence=text,
@@ -169,8 +185,48 @@ def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
                 ipa=None,
                 quality=quality_weight,
                 chances=result["chances"].get((diff.word, diff.expected), 1),
+                analysis_version=ANALYSIS_VERSION,
             )
         )
+    return out
+
+
+def uncertain_words(heard: str, rewritten: str) -> set[str]:
+    """A rewrite is not ground truth; abstain around words it changed."""
+    import difflib
+
+    before = listen._WORD.findall(heard.lower().replace("’", "'"))
+    after = listen._WORD.findall(rewritten.lower().replace("’", "'"))
+    excluded: set[str] = set()
+    for tag, a, b, _, _ in difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes():
+        if tag != "equal":
+            excluded.update(before[max(0, a - 1):min(len(before), b + 1)])
+    return excluded
+
+
+def findings_for_segments(wav_path: str, segments: list[dict], label: str,
+                          *, tallies: list | None = None) -> list[Finding]:
+    """Align each transcript only to its own timed audio, retaining absolute times."""
+    import tempfile
+
+    import soundfile as sf
+
+    out: list[Finding] = []
+    with sf.SoundFile(wav_path) as source, tempfile.TemporaryDirectory(prefix="tharoor-segments-") as tmp:
+        rate = source.samplerate
+        duration = len(source) / rate
+        for index, segment in enumerate(segments):
+            start, end = max(0.0, segment["start"]), min(duration, segment["end"])
+            if end - start < 0.2 or not segment.get("words"):
+                continue
+            excluded = {word for item in segment["words"] if item.get("probability", 0) < 0.80
+                        for word in listen._WORD.findall(item["word"].lower().replace("’", "'"))}
+            source.seek(int(start * rate))
+            audio = source.read(int(end * rate) - int(start * rate), dtype="float32")
+            path = Path(tmp) / f"{index}.wav"
+            sf.write(path, audio, rate, subtype="FLOAT")
+            out.extend(findings_for(str(path), segment["text"], f"{label}-{index}",
+                                    tallies=tallies, excluded_words=excluded, offset=start))
     return out
 
 
@@ -269,20 +325,10 @@ def assess(findings: list[Finding], day: date | None = None):
     Confidence answers "did the model hear this clearly". It does not answer
     "is this a habit", and only the second belongs in a morning report.
     """
-    from . import evidence
+    from . import evidence, streaks
 
     day = day or date.today()
-    pooled: dict[tuple[str, str], list[float]] = {}
-    for f in findings:
-        key = (f.word, f.contrast)
-        row = pooled.setdefault(key, [0.0, 0.0])
-        row[0] += f.chances
-        row[1] += f.evidence_weight
-    observations = [
-        evidence.Observation(day, word, contrast, int(max(n, 1)), min(k, n))
-        for (word, contrast), (n, k) in pooled.items()
-    ]
-    return evidence.assess(observations, day)
+    return evidence.assess(streaks.observations(today=day, min_version=ANALYSIS_VERSION), day)
 
 
 def trustworthy_contrasts(findings: list[Finding], day: date | None = None) -> dict[str, float]:
@@ -291,14 +337,15 @@ def trustworthy_contrasts(findings: list[Finding], day: date | None = None) -> d
     A sound earns its place when the pooled rate across every word carrying
     it is real, not when one word produced one confident detection.
     """
-    from . import evidence
+    from . import evidence, streaks
 
     day = day or date.today()
     totals: dict[str, list[float]] = {}
-    for f in findings:
-        row = totals.setdefault(f.contrast, [0.0, 0.0])
-        row[0] += f.chances
-        row[1] += f.evidence_weight
+    for obs in streaks.observations(today=day, min_version=ANALYSIS_VERSION):
+        decay = evidence._decay(obs.day, day)
+        row = totals.setdefault(obs.contrast, [0.0, 0.0])
+        row[0] += obs.opportunities * decay
+        row[1] += obs.error_weight * decay
     out = {}
     for contrast, (n, k) in totals.items():
         k = min(k, n)
@@ -311,17 +358,25 @@ def trustworthy_contrasts(findings: list[Finding], day: date | None = None) -> d
 
 def group(findings: list[Finding], day: date | None = None) -> dict[str, list[Finding]]:
     """By sound, worst first, and only sounds the evidence supports."""
+    from . import accuracy
+
+    day = day or date.today()
+    dismissed = {(label.word, label.contrast) for label in accuracy.labels()
+                 if label.day == str(day) and label.verdict == accuracy.FALSE_ALARM}
     bounds = trustworthy_contrasts(findings, day)
     grouped: dict[str, list[Finding]] = {}
     for finding in findings:
+        if finding.analysis_version < ANALYSIS_VERSION or finding.confidence < listen.MIN_PHONE_CONFIDENCE:
+            continue
+        if finding.quality <= 0:
+            continue
+        if (finding.word, finding.contrast) in dismissed:
+            continue
         grouped.setdefault(finding.contrast, []).append(finding)
     for items in grouped.values():
         items.sort(key=lambda f: -f.confidence)
     keep = {c: items for c, items in grouped.items()
             if bounds.get(c, 0.0) >= CONTRAST_THRESHOLD}
-    if not keep:  # nothing certain: show the single best, clearly marked
-        best = max(bounds, key=lambda c: bounds[c], default=None)
-        keep = {best: grouped[best]} if best else {}
     return dict(sorted(keep.items(), key=lambda kv: -bounds.get(kv[0], 0.0)))
 
 

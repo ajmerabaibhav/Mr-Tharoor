@@ -7,3 +7,5 @@ __pycache__/
 phoneme_ledger.egg-info/
 mr_roy.egg-info/
 logs/
+.pytest_cache/
+*.egg-info/

@@ -1,5 +1,53 @@
 # Mr Tharoor
 
+## Reliability update — 20 September 2026
+
+The speech-to-report pipeline now abstains when recognition is uncertain:
+
+- Each Whisper segment is compared only with its own timed audio. Previously,
+  every segment was aligned to the entire recording.
+- Wispr pronunciation analysis uses its raw transcript. Rewritten words and
+  their neighbours are excluded; formatted text is not proof of what was said.
+- A pronunciation candidate needs a phoneme score of at least 0.80, overall
+  alignment agreement of at least 0.60, and matching neighbouring sounds.
+  Weak vowels in common function words are not treated as mistakes.
+- Counts include correctly pronounced words and recordings, once each.
+  The report and reminders use the same evidence filter. If nothing qualifies,
+  neither invents a correction. Older findings remain on disk but cannot
+  automatically create new reminders under the revised policy.
+- Grammar uses a small set of explicit local rules, plus isolated changes you
+  made by hand. Model rewrites such as `kindly → please`, `prepone → bring
+  forward`, and `the same → it` are not grammar judgements.
+- `tharoor check` plays your own clip and the reference. Answering `n` excludes
+  that day's word/sound from future evidence, reports, and reminders.
+
+The latest reference test produced **0 flags in 118 usable sound opportunities
+across 86 cached reference recordings**. This does not measure recall or
+accuracy on your connected speech. Model scores are not calibrated probabilities
+that you made a mistake. The historical experiments below predate this update.
+
+`tharoor install` updates the three existing launch agents. Analysis checks
+every 15 minutes while awake and at login, catches up the last three days,
+and processes the current day after 23:30. Scheduled analysis also runs on
+battery; it does not request a wake lock. The morning job retries until a
+completed local report exists and opens it once per report/day between 08:00
+and 21:00, outside calls. A day analysed before midnight is finalised again
+the next day to include late speech. Raw audio still expires after three days.
+
+The existing HTML report remains the daily review because it can play your
+voice and the dictionary reference. PDF and Word exports are optional local
+outputs when their converters are installed. There is no cloud LLM call.
+The existing local speech models are still required to interpret microphone audio.
+
+Meetings remain disabled: the current code cannot reliably distinguish your
+voice from other speakers, and its previous shared voice-processing path
+degraded calls. Reading detection is a heuristic based on the foreground app,
+output audio, and sampled speech; it cannot know which text you are reading.
+
+Run the automated checks with `python3 -m pytest tests -q`. The tests isolate
+the user's data and mock capture. The explicit hardware check is separate:
+`python3 tests/test_micgate.py` (opens a test microphone stream).
+
 A pronunciation and phrasing coach that listens to how you actually talk, and
 each morning greets you with the words you got wrong, your own voice next to a
 recording of them said properly, and the phrases you keep getting backwards.
@@ -52,8 +100,8 @@ Then talk normally. That is the whole thing.
 roy listen           # start it, leave it running, forget it
 ```
 
-That is the whole daily interaction. At 23:30 it analyses the day, at 08:30
-the report opens itself.
+That is the whole daily interaction. At 23:30 it analyses the day; the morning
+report opens after 08:00, with retries after sleep or login.
 
 | Command | What it does |
 |---|---|
@@ -67,7 +115,8 @@ the report opens itself.
 | `roy probe` | record 20 sentences that test whether it works on your voice |
 | `roy analyse-day` | run tonight's job now |
 | `roy logs` | what the scheduled jobs actually did |
-| `roy install --remove` | stop all of it. Two files deleted. |
+| `roy install --remove` | stop all of it. Three launch-agent files deleted. |
+| `roy analyse-pending --force` | catch up retained days, including on battery |
 
 ---
 
@@ -79,12 +128,11 @@ Two sources, best first.
 dictation is already stored on your Mac: the audio, what the recogniser heard,
 what the model decided you meant, and what you corrected by hand. That is the
 exact pair this tool needs, produced by a model that saw the whole sentence.
-Mr Tharoor reads it (read-only, through SQLite's backup API, never writing to it)
-and gets clean close-mic audio with reliable text for free. It is also where
-the **phrasing** section comes from: what you said against what you meant,
-filtered to the kinds of change a grammar teacher would mark, articles,
-prepositions, number, verb form, and Indian English fixed phrases like
-"revert back" and "discuss about". Fillers and style rewrites are discarded.
+Mr Tharoor reads it through SQLite's read-only backup API. Pronunciation is
+aligned to the raw transcript, with rewritten regions excluded. The
+**phrasing** section applies explicit grammar rules to that transcript and
+can include isolated changes you made by hand. A transcript can still be wrong;
+listen to the recording before accepting a suggestion.
 
 The reader checks Wispr's schema before trusting anything and fails loudly
 if a release changes it.
@@ -149,7 +197,7 @@ wav2vec2-espeak     ──►  the sounds you MADE
    confidence and audio quality, decayed by age
         │
         ▼
-   report only when the 95% lower bound says the error rate is real
+   report only when the model's lower bound clears the reporting threshold
 ```
 
 A sound reaches the page when the pooled rate across every word carrying it
@@ -266,12 +314,14 @@ has a clean Windows equivalent.
 ## Tests
 
 ```bash
-for t in tests/test_*.py; do python3 "$t"; done
+pip install -e '.[dev]'
+python3 -m pytest tests -q
 ```
 
-Four suites. They cover the things that fail silently: never playing a
-different word than the one asked for, never caching a rate limit as "this
-word has no pronunciation", never letting a holiday read as improvement.
+The checks cover segment/audio correspondence, abstention, homographs,
+complete evidence counts, grammar rewrites, reminders, scheduler retries,
+dictionary lookups, and microphone policy. They do not measure personalised
+recognition accuracy; use `roy check` for that.
 
 ## Licence
 

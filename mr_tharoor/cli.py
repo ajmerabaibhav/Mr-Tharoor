@@ -25,7 +25,7 @@ import json
 import sys
 
 import time
-from datetime import date
+from datetime import date, timedelta
 
 from . import accuracy, config, dictionary, micgate, probe, streaks
 
@@ -93,20 +93,45 @@ def cmd_check(args: argparse.Namespace) -> int:
     evidence.py is currently my guess; your answers here are what turn those
     guesses into settings.
     """
-    rows = streaks.tonights_report()
-    if not rows:
+    import subprocess
+    from pathlib import Path
+
+    from . import daily, report
+
+    day = (date.fromisoformat(args.day) if getattr(args, "day", None)
+           else report.latest_day(before=date.today() + timedelta(days=1)))
+    findings = daily.load(day) if day else []
+    grouped = daily.group(findings, day) if day else {}
+    if not grouped:
         print("Nothing flagged to check yet.")
         print("Mr Tharoor needs to have heard you speak first.")
         return 0
 
-    pending = [(row, word) for row in rows for word in row.words[: args.per_sound]]
+    pending = []
+    for items in grouped.values():
+        seen = set()
+        for item in items:
+            if item.word in seen:
+                continue
+            pending.append(item)
+            seen.add(item.word)
+            if len(seen) >= args.per_sound:
+                break
     print(f"{len(pending)} flags to judge. y = I did say it wrong, n = I said it fine,")
     print("s = skip, u = cannot tell. Ctrl-C to stop; answers are saved as you go.\n")
 
     saved = 0
-    for row, word in pending:
+    bounds = daily.trustworthy_contrasts(findings, day)
+    for item in pending:
+        word = item.word
+        print(f"  {word} ({item.contrast}) from {day}; model score {item.confidence:.0%}")
+        print(f"     transcript: {item.sentence[:160]}")
+        if not item.clip_path or not Path(item.clip_path).exists():
+            print("     Your clip is unavailable; skipping so you do not have to guess.")
+            continue
+        print("     playing your recording...")
+        subprocess.run(["afplay", item.clip_path], check=False)
         entry = dictionary.lookup(word)
-        print(f"  {word}  ({row.contrast})   Mr Tharoor is {row.lower_bound:.0%} sure")
         if entry.audio_path:
             print("     playing the correct pronunciation...")
             dictionary.play(word)
@@ -124,14 +149,20 @@ def cmd_check(args: argparse.Namespace) -> int:
             continue
         accuracy.record(
             accuracy.Label(
-                day=date.today().isoformat(),
+                day=day.isoformat(),
                 word=word,
-                contrast=row.contrast,
+                contrast=item.contrast,
                 verdict=verdict,
-                lower_bound=row.lower_bound,
+                clip=item.clip_path,
+                lower_bound=bounds.get(item.contrast),
             )
         )
         saved += 1
+
+    if saved:
+        grammar_path = config.REPORTS_DIR / f"{day}-grammar.json"
+        habits = json.loads(grammar_path.read_text()) if grammar_path.exists() else []
+        report.write(findings, day, grammar=habits)
 
     print(f"\n  {saved} judgements saved. Run `roy score` to see what they say.")
     return 0
@@ -479,6 +510,16 @@ def cmd_listen(args: argparse.Namespace) -> int:
 
 
 def cmd_analyse_day(args: argparse.Namespace) -> int:
+    from . import schedule
+
+    with schedule.job_lock("analysis") as acquired:
+        if not acquired:
+            print("  Analysis is already running; the next scheduled check will retry.")
+            return 1
+        return _analyse_day(args)
+
+
+def _analyse_day(args: argparse.Namespace) -> int:
     """The nightly job. Every step logged, so a failure is never silent.
 
     Two sources, best first:
@@ -510,8 +551,10 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
         return 0
 
     findings = []
+    tallies = []
     grammar_findings = []
     sources = {"wispr": 0, "own": 0}
+    failures = 0
 
     with log.step("nightly", day=str(when)):
         # ---- source 1: Wispr Flow ----
@@ -522,20 +565,30 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
                 logger.error(f"Wispr reader disabled: {exc}")
                 print(f"  Wispr Flow database changed shape: {exc}")
                 dictations = []
+                failures += 1
             except Exception as exc:  # noqa: BLE001
                 logger.error(f"Wispr read failed: {type(exc).__name__}: {exc}")
                 dictations = []
+                failures += 1
             print(f"  {len(dictations)} dictations in Wispr Flow for {when}")
             folder = listener.sessions_dir(when)
             for index, d in enumerate(dictations, 1):
-                grammar_findings += grammar.compare(d.heard, d.meant, f"wispr-{d.id[:8]}")
+                label = f"{when}-wispr-{dictionary.cache_key(d.id)}"
+                grammar_findings += grammar.compare(d.heard, d.meant, label, edited=d.edited)
                 path = wispr.write_wav(d, folder)
                 if not path:
                     continue
-                quality = listen.audio_quality(str(path))
-                if not quality["usable"]:
+                if not d.heard:
                     continue
-                findings += daily.findings_for(str(path), d.meant, f"wispr-{d.id[:8]}")
+                try:
+                    findings += daily.findings_for(
+                        str(path), d.heard, label, tallies=tallies,
+                        excluded_words=daily.uncertain_words(d.heard, d.meant),
+                    )
+                except Exception as exc:
+                    failures += 1
+                    logger.error(f"could not analyse {label}: {type(exc).__name__}: {exc}")
+                    continue
                 sources["wispr"] += 1
                 if index % 10 == 0:
                     print(f"    {index}/{len(dictations)} dictations, {len(findings)} sound findings so far")
@@ -546,24 +599,33 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
         chunks = listener.todays_audio(when)
         print(f"  {len(chunks)} recordings of our own for {when}")
         for index, chunk in enumerate(chunks, 1):
-            quality = listen.audio_quality(str(chunk))
-            if not quality["usable"]:
-                logger.info(f"skip {chunk.name}: SNR {quality['snr_db']}dB is room tone")
+            try:
+                quality = listen.audio_quality(str(chunk))
+                if not quality["usable"]:
+                    logger.info(f"skip {chunk.name}: SNR {quality['snr_db']}dB is room tone")
+                    continue
+                segments = listen.transcribe(str(chunk))
+                label = f"{when}-{chunk.stem}"
+                findings += daily.findings_for_segments(str(chunk), segments, label, tallies=tallies)
+                for n, segment in enumerate(segments):
+                    if segment.get("words") and all(w.get("probability", 0) >= 0.80 for w in segment["words"]):
+                        grammar_findings += grammar.check(segment["text"], f"{label}-{n}")
+            except Exception as exc:
+                failures += 1
+                logger.error(f"could not analyse {chunk.name}: {type(exc).__name__}: {exc}")
                 continue
-            for segment in listen.transcribe(str(chunk)):
-                findings += daily.findings_for(
-                    str(chunk), segment["text"], f"{chunk.stem}-{int(segment['start'])}"
-                )
             sources["own"] += 1
             if index % 10 == 0:
                 print(f"    {index}/{len(chunks)} recordings, {len(findings)} sound findings so far")
 
-        if not findings and not grammar_findings:
-            logger.info(f"nothing to report for {when}")
-            print("  Nothing heard. Dictate into Wispr, or make sure `roy listen` is running.")
-            return 0
+        if failures:
+            logger.error(f"{failures} sources failed; keeping the previous report and retrying later")
+            print(f"  {failures} sources failed. Previous report kept; see `roy logs`.")
+            return 1
 
-        daily.attach_pronunciations(findings)
+        streaks.record_day(when, tallies)
+        selected = [f for items in daily.group(findings, when).values() for f in items]
+        daily.attach_pronunciations(selected)
         daily.save(findings, when)
         # Raw corrections are kept per day; the report's habits are counted
         # over the last week, because one day rarely repeats a phrase twice
@@ -590,21 +652,28 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
             try:
                 for d in wispr.dictations(since=cutoff, with_audio=False):
                     if d.when.date() <= when:
-                        week += grammar.compare(d.heard, d.meant, f"wispr-{d.id[:8]}")
+                        week += grammar.compare(d.heard, d.meant, f"{d.when.date()}-wispr-{d.id}", edited=d.edited)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"weekly grammar pass failed: {type(exc).__name__}: {exc}")
                 week = list(grammar_findings)
-        else:
-            for back in range(grammar.HABIT_WINDOW_DAYS):
-                raw = config.REPORTS_DIR / f"{(when - _td(days=back)).isoformat()}-grammar-raw.json"
-                if raw.exists():
+        for back in range(grammar.HABIT_WINDOW_DAYS):
+            raw = config.REPORTS_DIR / f"{(when - _td(days=back)).isoformat()}-grammar-raw.json"
+            if raw.exists():
+                try:
                     week += [grammar.GrammarFinding(**row) for row in _json.loads(raw.read_text())]
+                except (ValueError, TypeError):
+                    logger.warning(f"could not read grammar history for {raw.name}")
+        # Include local reading suggestions too, even when Wispr is present.
+        week += grammar_findings
         grammar_rows = [row for row in grammar.summarise(week, limit=10) if row["times"] >= 2]
-        config.write_json_atomically(
-            config.REPORTS_DIR / f"{when.isoformat()}-grammar.json", grammar_rows
-        )
-        added = remind.enqueue(findings)
+        config.write_json_atomically(config.REPORTS_DIR / f"{when}-grammar.json", grammar_rows)
+        added = remind.enqueue(selected, day=when)
         written = report.write(findings, when, grammar=grammar_rows)
+        config.write_json_atomically(config.REPORTS_DIR / f"{when}-analysis.json", {
+            "version": daily.ANALYSIS_VERSION, "completed_at": datetime.now().isoformat(),
+            "sources": sources, "opportunities": sum(t.said for t in tallies),
+            "candidates": len(findings), "shown": len(selected),
+        })
 
     log.event("nightly_done", day=str(when), findings=len(findings),
               grammar=len(grammar_findings), cards=added, **sources)
@@ -615,7 +684,43 @@ def cmd_analyse_day(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_analyse_pending(args: argparse.Namespace) -> int:
+    """Catch up retained days after sleep/login; completed days are not decoded again."""
+    from datetime import datetime, timedelta
+
+    from . import daily
+
+    now = datetime.now()
+    days = [now.date() - timedelta(days=n) for n in range(3, 0, -1)]
+    if (now.hour, now.minute) >= (23, 30):
+        days.append(now.date())
+    for day in days:
+        marker = config.REPORTS_DIR / f"{day}-analysis.json"
+        if marker.exists():
+            try:
+                completed = json.loads(marker.read_text())
+                if (completed.get("version") == daily.ANALYSIS_VERSION
+                        and (datetime.fromisoformat(completed["completed_at"]).date() > day
+                             or day == now.date())):
+                    continue
+            except (ValueError, TypeError, KeyError):
+                pass
+        result = cmd_analyse_day(argparse.Namespace(day=str(day), force=args.force))
+        if result:
+            return result
+    return 0
+
+
 def cmd_morning(args: argparse.Namespace) -> int:
+    from . import schedule
+
+    with schedule.job_lock("morning") as acquired:
+        if not acquired:
+            return 0
+        return _morning(args)
+
+
+def _morning(args: argparse.Namespace) -> int:
     """08:30. Open yesterday's report and say good morning."""
     import json
     import subprocess
@@ -623,14 +728,31 @@ def cmd_morning(args: argparse.Namespace) -> int:
 
     from . import daily, log, remind, report
 
-    yesterday = _date.today() - timedelta(days=1)
-    day = yesterday if (config.REPORTS_DIR / f"{yesterday.isoformat()}.html").exists() else _date.today()
+    automatic = getattr(args, "automatic", False)
+    state_path = config.DATA_DIR / "morning.json"
+    if automatic:
+        from datetime import datetime
+        from . import micgate
+
+        if not 8 <= datetime.now().hour < 21 or micgate.is_mic_in_use():
+            return 0
+    day = report.latest_day(before=_date.today())
+    if day is None:
+        print("  No completed report yet. Analysis will catch up at the next scheduled check.")
+        return 0
+    if automatic and state_path.exists():
+        try:
+            state = json.loads(state_path.read_text())
+            if state.get("opened_on") == str(_date.today()) and state.get("report_day") == str(day):
+                return 0
+        except (ValueError, TypeError):
+            pass
     with log.step("morning"):
         path = report.open_report(day)
         findings = daily.load(day)
         grammar_file = config.REPORTS_DIR / f"{day.isoformat()}-grammar.json"
         habits = json.loads(grammar_file.read_text()) if grammar_file.exists() else []
-        sounds = len({f.contrast for f in findings})
+        sounds = len(daily.group(findings, day))
         name = config.user_name()
         thrown = log.too_far(day)
         if path:
@@ -650,6 +772,8 @@ def cmd_morning(args: argparse.Namespace) -> int:
                 capture_output=True,
             )
         result = remind.run()
+        if path:
+            config.write_json_atomically(state_path, {"opened_on": str(_date.today()), "report_day": str(day)})
     if path:
         print(f"  Good morning, {name}. Opened {path}")
     else:
@@ -760,6 +884,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     check = sub.add_parser("check", help="judge his flags, so we learn if he is right")
     check.add_argument("--per-sound", type=int, default=2, help="words to judge per sound")
+    check.add_argument("--day", help="review a specific YYYY-MM-DD report")
     check.set_defaults(func=cmd_check)
 
     score = sub.add_parser("score", help="how accurate Mr Tharoor has actually been")
@@ -789,7 +914,12 @@ def build_parser() -> argparse.ArgumentParser:
     day_cmd.add_argument("--force", action="store_true", help="run even on battery")
     day_cmd.set_defaults(func=cmd_analyse_day)
 
+    pending = sub.add_parser("analyse-pending", help="catch up unprocessed days after sleep or login")
+    pending.add_argument("--force", action="store_true", help="also analyse while on battery")
+    pending.set_defaults(func=cmd_analyse_pending)
+
     morning_cmd = sub.add_parser("morning", help="the 08:30 job")
+    morning_cmd.add_argument("--automatic", action="store_true", help="open once per day, outside calls and quiet hours")
     morning_cmd.set_defaults(func=cmd_morning)
 
     selftest_cmd = sub.add_parser(

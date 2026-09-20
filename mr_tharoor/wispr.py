@@ -32,6 +32,7 @@ and the copy is what gets read.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import tempfile
 from dataclasses import dataclass
@@ -77,12 +78,17 @@ def _snapshot() -> Path:
     if not DB_PATH.exists():
         raise FileNotFoundError(f"Wispr Flow database not found at {DB_PATH}")
     handle, path = tempfile.mkstemp(suffix=".sqlite", prefix="wispr-ro-")
-    Path(path).unlink()  # backup() wants to create it
+    os.close(handle)
     source = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
     try:
         target = sqlite3.connect(path)
-        source.backup(target)
-        target.close()
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+    except BaseException:
+        Path(path).unlink(missing_ok=True)
+        raise
     finally:
         source.close()
     return Path(path)
@@ -118,13 +124,16 @@ def dictations(since: datetime | None = None, with_audio: bool = True) -> list[D
     snapshot = _snapshot()
     try:
         conn = sqlite3.connect(f"file:{snapshot}?mode=ro", uri=True)
-        _check_schema(conn)
-        rows = conn.execute(
-            "SELECT transcriptEntityId, timestamp, asrText, formattedText, editedText, "
-            "app, audio FROM History WHERE status = 'formatted' AND formattedText IS NOT NULL "
-            "ORDER BY timestamp ASC"
-        ).fetchall()
-        conn.close()
+        try:
+            _check_schema(conn)
+            audio_column = "audio" if with_audio else "NULL"
+            rows = conn.execute(
+                "SELECT transcriptEntityId, timestamp, asrText, formattedText, editedText, "
+                f"app, {audio_column} FROM History WHERE status = 'formatted' AND formattedText IS NOT NULL "
+                "ORDER BY timestamp ASC"
+            ).fetchall()
+        finally:
+            conn.close()
     finally:
         snapshot.unlink(missing_ok=True)
 

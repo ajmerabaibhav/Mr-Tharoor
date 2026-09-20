@@ -134,11 +134,16 @@ class Listener:
         self.voice_processing = use_voice_processing
         self.logger = log.get("listener")
         self.cooldown_until = 0.0
+        self.reading_day = date.today()
+        self.reading_used = _reading_seconds_on_disk(self.reading_day)
 
     def reading_budget_left(self) -> float:
         """Seconds of speculative recording still allowed today."""
-        used = self.stats.reading_seconds + _reading_seconds_on_disk()
-        return max(READING_BUDGET_MINUTES * 60 - used, 0.0)
+        today = date.today()
+        if today != self.reading_day:
+            self.reading_day = today
+            self.reading_used = _reading_seconds_on_disk(today)
+        return max(READING_BUDGET_MINUTES * 60 - self.reading_used, 0.0)
 
     def stop(self, *_):
         self.running = False
@@ -294,24 +299,30 @@ Uses sounddevice, not AVAudioEngine, and never touches the voice path.
                     if last_mode != "spent":
                         self.logger.info(
                             f"reading-aloud budget for today is spent "
-                            f"({READING_BUDGET_MINUTES:.0f} min). Calls still record."
+                            f"({READING_BUDGET_MINUTES:.0f} min). Wispr imports still work."
                         )
                         last_mode = "spent"
                     time.sleep(IDLE_EVERY * 6)
                 elif time.time() < self.cooldown_until:
                     time.sleep(IDLE_EVERY)
                 elif self._peek():
-                    self.logger.info("heard you reading aloud, recording")
+                    self.logger.info("speech detected near a reading app, recording")
                     # Short chunks, and re-check the world between each one.
                     # The old loop held the microphone for a full 30 seconds
                     # before asking whether it should still be listening.
                     while self.running and self.reading_budget_left() > 0:
+                        if deadline and time.time() >= deadline:
+                            break
                         if context.decide().mode != context.LISTEN_SAMPLE:
                             break
-                        kept = self._capture_chunk(
-                            "reading aloud", voice=False, seconds=READING_CHUNK_SECONDS
-                        )
-                        self.stats.reading_seconds += READING_CHUNK_SECONDS
+                        seconds = min(READING_CHUNK_SECONDS, self.reading_budget_left())
+                        if deadline:
+                            seconds = min(seconds, max(0, deadline - time.time()))
+                        if seconds <= 0:
+                            break
+                        kept = self._capture_chunk("reading aloud", voice=False, seconds=seconds)
+                        self.stats.reading_seconds += seconds
+                        self.reading_used += seconds
                         if not kept:
                             break  # you stopped; go back to peeking
                     # Whatever happened, step away from the microphone for a

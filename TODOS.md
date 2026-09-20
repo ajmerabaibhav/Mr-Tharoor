@@ -1,5 +1,39 @@
 # What is not built, and what is known broken
 
+## Reliability repairs — 20 September 2026
+
+Implemented and regression tested:
+
+- Sentence transcripts previously aligned to the whole recording. They now
+  use timestamped slices and retain their absolute source time.
+- Wispr's formatted text previously supplied the pronunciation reference.
+  Raw ASR now supplies it, and words near rewrites are excluded.
+- A best-effort fallback showed a finding when no sound passed the report
+  threshold. Removed; reminders now share the report's filter.
+- Opportunity counts previously omitted clean words and duplicated totals
+  for repeated errors. Nightly analysis now writes complete, idempotent tallies.
+- Grammar diffs previously promoted model style rewrites to mistakes. Default
+  grammar analysis now uses explicit rules; only hand edits enter the diff path.
+- Homographs were chosen per spelling, forcing repeated `read` to have one
+  pronunciation. Choices are now per occurrence, with abstention beyond the
+  search budget.
+- Review never played the user's clip and could not see nightly evidence.
+  It now reviews actual report examples and honours false-alarm judgements.
+- Reading budgets double-counted saved chunks and did not reset at midnight.
+  Both are fixed. Unknown microphone ownership now prevents speculative capture.
+- Nightly battery skips had no retry; morning searched only yesterday/today.
+  Catch-up analysis, completion markers, login/interval retries, and once-daily
+  opening of the latest completed report are implemented. Scheduled analysis
+  now permits battery operation while the laptop is awake.
+- Reminders did not enforce their daily cap across invocations and reanalysis
+  reset learning progress. Delivery counts and last-seen dates now persist.
+
+Still unresolved: recognition accuracy on this user's connected speech;
+speaker attribution for meetings; identifying the exact text being read;
+support for a selectable accent beyond the CMUdict reference. The limited
+local grammar rules intentionally miss many constructions. Historical results
+and notes below describe the earlier pipeline and are not current guarantees.
+
 Everything deferred is written down here. A vague intention is a lie.
 
 ## The honest state
@@ -7,7 +41,7 @@ Everything deferred is written down here. A vague intention is a lie.
 Mr Tharoor runs. Three launchd agents: a context-aware listener at login, analysis
 at 23:30, the report and greeting at 08:30. For dictation it reads Wispr Flow's
 own database (audio already paired with the words you meant); its own
-microphone covers meetings, calls and reading aloud. The report has a
+microphone covers reading aloud. Meetings and calls remain disabled. The report has a
 pronunciation section with your voice next to a human recording, and a
 phrasing section with the corrections you keep needing.
 
@@ -39,7 +73,7 @@ ordinary day against 24.0 dB through Wispr. No code fixes that.
 | # | What | Severity | Where |
 |---|------|----------|-------|
 | 1 | **No speaker filter**, so meetings are simply not recorded any more: the microphone stays shut while another app holds it. That removes the consent problem and the wrong-speaker data, and gives up the only source for meetings. ~150 lines with voice enrolment would buy it back. | Medium | `context.py` |
-| 2 | **Grammar "correct" side is an LLM's opinion.** Wispr's cleaned text is a model's rewrite, not ground truth, except where you edited it by hand. A style preference can read as a correction. The filter is strict, but not perfect. | Medium | `grammar.py` |
+| 2 | **Grammar coverage is deliberately limited.** Local rules and hand edits avoid model style judgements, but cannot detect every grammar issue and still depend on transcript accuracy. | Medium | `grammar.py` |
 | 3 | **Reading-aloud detection is energy plus zero-crossing.** A radio in the next room can pass it. The SNR gate and the nightly analysis catch most of that downstream, at the cost of a wasted 30s recording. | Medium | `listener.py` |
 | 4 | **Wispr schema dependency.** Another company's private database. The reader checks the schema and fails loudly, but a Wispr release can still break the primary source overnight. Fallback is the listener. | Medium | `wispr.py` |
 | 5 | **Whisper cannot recover badly-said words** on our own recordings (not Wispr's). *version* became *mission*. Two recovery routes have now been tried and measured empty — see below. Only Wispr's text, or `roy check`, tells those apart. | Medium | `listen.py` |

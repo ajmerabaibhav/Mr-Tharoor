@@ -212,7 +212,10 @@ def _is_our_listener(pid: int) -> bool:
         ).stdout
     except Exception:  # noqa: BLE001
         return False
-    return "roy listen" in command or "mr_tharoor.cli listen" in command
+    import re
+
+    return bool(re.search(r"(?:^|[/\s])(?:roy|tharoor)\s+listen(?:\s|$)", command)
+                or "mr_tharoor.cli listen" in command)
 
 
 def mic_users(exclude_self: bool = True) -> list[MicUser]:

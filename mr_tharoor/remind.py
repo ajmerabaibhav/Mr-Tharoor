@@ -30,11 +30,12 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from . import config, micgate
 
 QUEUE_FILE = config.DATA_DIR / "reminders.json"
+DELIVERIES_FILE = config.DATA_DIR / "reminder-deliveries.json"
 
 # Hours until a card comes back, by how many times you have got it right.
 LADDER = (4, 24, 48, 96, 168)
@@ -57,6 +58,8 @@ class Card:
     seen: int = 0
     due: str = ""
     created: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+    analysis_version: int = 0
+    last_seen: str = ""
 
     def __post_init__(self) -> None:
         if not self.due:
@@ -92,19 +95,28 @@ def _save(cards: list[Card]) -> None:
     config.write_json_atomically(QUEUE_FILE, [asdict(c) for c in cards])
 
 
-def enqueue(findings) -> int:
+def enqueue(findings, day: date | None = None) -> int:
     """Add today's mistakes. An existing card is refreshed, not duplicated."""
     cards = _load()
+    from . import daily
+
+    day = day or date.today()
+    findings = [f for items in daily.group(findings, day).values() for f in items]
     index = {(c.word, c.contrast): c for c in cards}
     added = 0
     for finding in findings:
         key = (finding.word, finding.contrast)
         existing = index.get(key)
         if existing:
+            if existing.last_seen >= day.isoformat():
+                continue  # Re-running an old day is not a new mistake.
             # Said wrong again: it is not learned, so reset the ladder.
             existing.correct_streak = 0
             existing.due = datetime.now().isoformat(timespec="seconds")
             existing.clip_path = finding.clip_path or existing.clip_path
+            existing.correct_path = finding.correct_path or existing.correct_path
+            existing.last_seen = day.isoformat()
+            existing.analysis_version = daily.ANALYSIS_VERSION
             continue
         card = Card(
             word=finding.word,
@@ -113,6 +125,8 @@ def enqueue(findings) -> int:
             should_be=finding.should_be,
             clip_path=finding.clip_path,
             correct_path=finding.correct_path,
+            analysis_version=daily.ANALYSIS_VERSION,
+            last_seen=day.isoformat(),
         )
         cards.append(card)
         index[key] = card
@@ -123,7 +137,14 @@ def enqueue(findings) -> int:
 
 def due_now(limit: int = MAX_PER_DAY) -> list[Card]:
     """What to surface, worst and most overdue first."""
-    cards = [c for c in _load() if not c.retired and c.overdue_hours >= 0]
+    from . import accuracy, daily
+
+    cutoff = (date.today() - timedelta(days=14)).isoformat()
+    dismissed = {(label.day, label.word, label.contrast) for label in accuracy.labels()
+                 if label.verdict == accuracy.FALSE_ALARM}
+    cards = [c for c in _load() if not c.retired and c.overdue_hours >= 0
+             and c.analysis_version >= daily.ANALYSIS_VERSION and c.last_seen >= cutoff
+             and (c.last_seen, c.word, c.contrast) not in dismissed]
     cards.sort(key=lambda c: (-c.overdue_hours, c.correct_streak))
     return cards[:limit]
 
@@ -144,8 +165,8 @@ def notify(card: Card, dry_run: bool = False) -> bool:
     osascript is used rather than a dependency because it is already on every
     Mac and this is three lines of AppleScript.
     """
-    title = f"You said {card.word} wrong"
-    body = f"/{card.said}/ should be /{card.should_be}/. Say it back three times."
+    title = f"Practise {card.word}"
+    body = f"Compare /{card.said}/ with /{card.should_be}/, then say the word three times."
     script = (
         f'display notification {json.dumps(body)} '
         f'with title {json.dumps(title)} sound name "Tink"'
@@ -163,11 +184,24 @@ def run(dry_run: bool = False) -> dict:
     if not allowed and not dry_run:
         return {"sent": 0, "skipped": reason}
 
-    cards = due_now()
+    today = date.today().isoformat()
+    try:
+        deliveries = json.loads(DELIVERIES_FILE.read_text()) if DELIVERIES_FILE.exists() else {}
+    except (ValueError, OSError):
+        return {"sent": 0, "skipped": "notification history unreadable; avoiding duplicate reminders"}
+    used = deliveries.get("sent", 0) if deliveries.get("day") == today else 0
+    cards = due_now(limit=max(0, MAX_PER_DAY - used))
     sent = 0
     for card in cards:
         if notify(card, dry_run=dry_run):
             sent += 1
+            if not dry_run:
+                all_cards = _load()
+                for stored in all_cards:
+                    if (stored.word, stored.contrast) == (card.word, card.contrast):
+                        stored.due = (datetime.now() + timedelta(hours=24)).isoformat(timespec="seconds")
+                _save(all_cards)
+                config.write_json_atomically(DELIVERIES_FILE, {"day": today, "sent": used + sent})
     return {"sent": sent, "queued": len(_load()), "skipped": "" if allowed else reason}
 
 

@@ -29,6 +29,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 from . import config
@@ -44,33 +45,35 @@ JOBS = {
         "what": "listen, context-aware, all day",
     },
     "com.tharoor.nightly": {
-        "args": ["analyse-day"],
+        "args": ["analyse-pending", "--force"],
         "hour": 23,
         "minute": 30,
-        "battery_safe": False,  # plugged in only: this is the expensive one
+        "retry": True,
+        "battery_safe": True,  # no wake assertion; catches up while the Mac is awake
         "what": "analyse the day's speech",
     },
     "com.tharoor.morning": {
-        "args": ["morning"],
+        "args": ["morning", "--automatic"],
         "hour": 8,
         "minute": 30,
         "battery_safe": True,  # cheap: opens a file and posts notifications
+        "retry": True,
         "what": "open the report, queue the reminders",
     },
 }
 
 
-def _roy() -> str:
+def _roy() -> list[str]:
     """The installed command, resolved now rather than guessed at run time."""
     found = shutil.which("tharoor")
     if found:
-        return found
-    return f"{sys.executable} -m mr_tharoor.cli"
+        return [found]
+    return [sys.executable, "-m", "mr_tharoor.cli"]
 
 
 def plist_for(label: str, job: dict) -> dict:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    command = _roy().split() + list(job["args"])
+    command = _roy() + list(job["args"])
     schedule: dict = {}
     if job.get("resident"):
         # KeepAlive: True, not {"SuccessfulExit": False}.
@@ -92,7 +95,9 @@ def plist_for(label: str, job: dict) -> dict:
     else:
         # A missed calendar event is not dropped: launchd runs it at the next
         # wake. That is the whole reason this is not cron.
-        schedule["RunAtLoad"] = False
+        schedule["RunAtLoad"] = bool(job.get("retry"))
+        if job.get("retry"):
+            schedule["StartInterval"] = 900
         schedule["StartCalendarInterval"] = {
             "Hour": job["hour"],
             "Minute": job["minute"],
@@ -108,6 +113,24 @@ def plist_for(label: str, job: dict) -> dict:
         "ProcessType": "Background",
         "EnvironmentVariables": {"MR_THAROOR_HOME": str(config.ROOT)},
     }
+
+
+@contextmanager
+def job_lock(name: str):
+    """Manual and scheduled jobs must not overwrite each other's day or queue."""
+    import fcntl
+
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with (config.DATA_DIR / f".{name}.lock").open("a") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def install(dry_run: bool = False) -> list[str]:
