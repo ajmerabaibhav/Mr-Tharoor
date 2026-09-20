@@ -105,6 +105,7 @@ def has_speech(audio) -> bool:
 class Stats:
     chunks_saved: int = 0
     chunks_dropped: int = 0
+    chunks_too_far: int = 0
     seconds_saved: float = 0.0
     reading_seconds: float = 0.0  # the speculative path only
     peeks: int = 0
@@ -115,6 +116,7 @@ class Stats:
             "reading_min": round(self.reading_seconds / 60, 1),
             "saved": self.chunks_saved,
             "dropped_silent": self.chunks_dropped,
+            "dropped_too_far": self.chunks_too_far,
             "minutes": round(self.seconds_saved / 60, 1),
             "peeks": self.peeks,
             "uptime_min": round((time.time() - self.started) / 60, 1),
@@ -211,6 +213,8 @@ Uses sounddevice, not AVAudioEngine, and never touches the voice path.
         """Record one chunk. Returns whether it held speech and was kept."""
         import soundfile as sf
 
+        from . import listen
+
         stamp = datetime.now().strftime("%H%M%S")
         path = sessions_dir() / f"{stamp}.wav"
         try:
@@ -229,6 +233,23 @@ Uses sounddevice, not AVAudioEngine, and never touches the voice path.
         if not has_speech(audio):
             path.unlink(missing_ok=True)  # never keep a recording of a quiet room
             self.stats.chunks_dropped += 1
+            return False
+
+        # The analyser refuses anything under listen.MIN_SNR_DB, so keeping it
+        # is pure cost: disk tonight, a decode at 23:30, then a deletion.
+        # MEASURED on 2026-09-20, 61 own-microphone chunks: 82% sat under the
+        # floor, median 3.1 dB, against 24.0 dB for the same voice through
+        # Wispr's close microphone. The same threshold as the analyser on
+        # purpose -- this changes what gets stored, never which findings exist.
+        #
+        # It is also the only place feedback is worth anything. The one lever
+        # on signal-to-noise is distance, and the person holding the laptop is
+        # the only one who can pull it. TOO_FAR is what `roy logs` counts.
+        snr = listen.snr_of(audio, SAMPLE_RATE)
+        if snr < listen.MIN_SNR_DB:
+            path.unlink(missing_ok=True)
+            self.stats.chunks_too_far += 1
+            self.logger.info(f"{log.TOO_FAR}: {snr:.0f} dB, microphone too far ({reason})")
             return False
 
         self.stats.chunks_saved += 1

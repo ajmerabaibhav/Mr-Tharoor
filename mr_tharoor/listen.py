@@ -474,14 +474,15 @@ def snr_weight(snr_db: float) -> float:
     return round((snr_db - MIN_SNR_DB) / (GOOD_SNR_DB - MIN_SNR_DB), 3)
 
 
-def audio_quality(wav_path: str) -> dict:
-    """Level and signal-to-noise for one recording, before we trust it."""
-    import numpy as np
-    import soundfile as sf
+def snr_of(audio, rate: int) -> float:
+    """Signal-to-noise for a buffer, in dB. -99 when there is nothing there.
 
-    audio, rate = sf.read(wav_path, dtype="float32")
-    if audio.ndim > 1:
-        audio = audio.mean(axis=1)
+    Lives here, not in the listener, because the listener needs the same
+    answer BEFORE writing a chunk to disk and there must not be two
+    definitions of "is this recording worth keeping".
+    """
+    import numpy as np
+
     frame = max(int(0.02 * rate), 1)
     energies = np.array(
         [
@@ -491,14 +492,66 @@ def audio_quality(wav_path: str) -> dict:
     )
     energies = energies[energies > 0]
     if energies.size == 0:
+        return -99.0
+    noise = float(np.percentile(energies, 10))
+    signal = float(np.percentile(energies, 90))
+    return 20 * float(np.log10(signal / noise)) if noise > 0 else 99.0
+
+
+# MEASURED, on 14 Wispr dictations of this speaker (2026-09-20). Split by how
+# much of the expected phoneme sequence the model actually matched:
+#
+#   agreement < 0.50   3 recordings, 33 findings over   213 chances = 15.5%
+#   agreement >= 0.50 11 recordings, 57 findings over 2,356 chances =  2.4%
+#
+# A six-fold difference, and SNR does not predict it: the worst of the three
+# (agreement 0.43) had the second-best signal in the set at 32.9 dB, and the
+# cleanest recording of all, 43.7 dB, sat at 0.53. They are different
+# questions. SNR asks whether the microphone heard the room; agreement asks
+# whether the model followed the words. When it did not, the aligner is
+# pairing sounds that have nothing to do with each other, and what falls out
+# is debris that looks exactly like a finding.
+#
+# For scale: 86 human recordings of correct American English score 0.87.
+#
+# One caveat that matters if these numbers are ever re-measured. Agreement
+# depends on WHICH text you align against. The figures above use Wispr's
+# text -- what you meant -- so a real mispronunciation lowers it, which is
+# the point. Align the same audio against Whisper's transcript instead and
+# agreement jumps (0.52 -> 0.77 on the same four dictations), because that
+# text was fitted to the sounds that came out. So on the own-microphone path
+# this weight is conservative by construction: it catches recordings where
+# the two models disagree about the same audio, and little else.
+LOW_AGREEMENT = 0.35  # below this the model was not tracking the speech
+GOOD_AGREEMENT = 0.60  # above this, full weight
+
+
+def agreement_weight(agreement: float) -> float:
+    """How much to trust findings from a recording the model half-followed."""
+    if agreement >= GOOD_AGREEMENT:
+        return 1.0
+    if agreement <= LOW_AGREEMENT:
+        return 0.0
+    return round(
+        (agreement - LOW_AGREEMENT) / (GOOD_AGREEMENT - LOW_AGREEMENT), 3
+    )
+
+
+def audio_quality(wav_path: str) -> dict:
+    """Level and signal-to-noise for one recording, before we trust it."""
+    import numpy as np
+    import soundfile as sf
+
+    audio, rate = sf.read(wav_path, dtype="float32")
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    snr = snr_of(audio, rate)
+    if snr == -99.0:
         # Every key every caller expects. Omitting "weight" here meant one
         # empty recording crashed the whole nightly job with a KeyError.
         return {"snr_db": 0.0, "rms_db": -99.0, "usable": False, "weight": 0.0,
                 "advice": "silent recording: wrong microphone, or it was muted"}
 
-    noise = float(np.percentile(energies, 10))
-    signal = float(np.percentile(energies, 90))
-    snr = 20 * float(np.log10(signal / noise)) if noise > 0 else 99.0
     rms = 20 * float(np.log10(float(np.sqrt((audio ** 2).mean())) + 1e-12))
 
     advice = ""

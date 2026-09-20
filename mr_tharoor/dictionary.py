@@ -261,13 +261,37 @@ def _synth_entry(word: str, ipa: str | None) -> Pronunciation:
     return Pronunciation(word, ipa, None, None, "missing")
 
 
+def _relocate(entry: Pronunciation) -> Pronunciation:
+    """Find audio the cache remembers at a path that no longer exists.
+
+    The index stores absolute paths, so renaming the checkout orphaned every
+    one of them: 94 of 95 entries pointed into ~/mr-roy the morning after the
+    rename. Each would have been re-downloaded one at a time, inside a 90
+    second nightly budget, and the report would have gone days without the
+    human recording that is the whole point of it. The files were never gone,
+    only the paths were, so look for the same name in the audio folder before
+    deciding anything needs fetching.
+    """
+    from dataclasses import replace
+
+    if not entry.audio_path or Path(entry.audio_path).exists():
+        return entry
+    here = config.AUDIO_DIR / Path(entry.audio_path).name
+    return replace(entry, audio_path=str(here)) if here.exists() else entry
+
+
+def cached_entries() -> list[Pronunciation]:
+    """Everything already on disk, no network. For measuring, not fetching."""
+    return [_relocate(Pronunciation(**raw)) for raw in _index().values()]
+
+
 def lookup(word: str, refresh: bool = False) -> Pronunciation:
     """Pronunciation for one word. Network only on the first ever lookup."""
     key = cache_key(word)
 
     index = _index()
     if not refresh and key in index:
-        cached = Pronunciation(**index[key])
+        cached = _relocate(Pronunciation(**index[key]))
         # A cache entry whose audio file was deleted is worse than no entry.
         if cached.audio_path is None or Path(cached.audio_path).exists():
             return cached

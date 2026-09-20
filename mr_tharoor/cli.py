@@ -632,12 +632,17 @@ def cmd_morning(args: argparse.Namespace) -> int:
         habits = json.loads(grammar_file.read_text()) if grammar_file.exists() else []
         sounds = len({f.contrast for f in findings})
         name = config.user_name()
+        thrown = log.too_far(day)
         if path:
             body = (
                 f"{sounds} sound{'s' if sounds != 1 else ''} and "
                 f"{len(habits)} phrase{'s' if len(habits) != 1 else ''} from {day:%A}. "
                 f"The report is open."
             )
+            # Said here because here is where it can still change something:
+            # the only lever on audio quality is how far away you sit.
+            if thrown >= 10:
+                body += f" {thrown} recordings were too far from the mic to use."
             subprocess.run(
                 ["osascript", "-e",
                  f'display notification {json.dumps(body)} with title '
@@ -653,10 +658,48 @@ def cmd_morning(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_selftest(args: argparse.Namespace) -> int:
+    """Measure the false-alarm floor on human recordings of correct speech."""
+    from . import accuracy
+
+    print("  running the detector on human recordings of CORRECT speech.")
+    print("  every finding below is a false alarm by construction.\n")
+    result = accuracy.selftest(limit=args.limit, refresh=args.refresh)
+    if not result["words"]:
+        print("  no cached reference recordings yet. Run a day first, or `roy say version`.")
+        return 1
+
+    for word, contrast, expected, actual in result["examples"]:
+        print(f"  FALSE ALARM  {word:<16}{contrast:<14}{expected} -> {actual}")
+    if result["examples"]:
+        print()
+    print(f"  {result['words']} words, phoneme agreement {result['mean_agreement']:.2f}")
+    print(f"  {result['false_alarms']} false alarms in {result['chances']} chances "
+          f"({result['rate']:.1%}, at most {result['upper']:.1%})\n")
+    print(f"  {'contrast':<16}{'false':>7}{'chances':>9}{'at most':>9}")
+    for name, row in result["contrasts"].items():
+        print(f"  {name:<16}{row['false']:>7}{row['chances']:>9}{row['upper']:>9.1%}")
+    print()
+    if result["rate"] > 0.05:
+        print("  The detector flags correct speech. Fix that before tuning anything.")
+    else:
+        print("  A floor, not the real rate: single words, quiet room, a speaker")
+        print("  without your habits. `roy check` is still the only test that")
+        print("  measures findings from your own speech.")
+    return 0
+
+
 def cmd_logs(args: argparse.Namespace) -> int:
     from . import log
 
     print(f"  health: {log.health()}")
+    thrown = log.too_far()
+    if thrown:
+        print(
+            f"  {thrown} recordings thrown away today: the microphone was too "
+            f"far to analyse. A hand-span from your mouth is worth about 12 dB, "
+            f"which no amount of processing buys back."
+        )
     print()
     print(log.tail(args.lines))
     return 0
@@ -748,6 +791,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     morning_cmd = sub.add_parser("morning", help="the 08:30 job")
     morning_cmd.set_defaults(func=cmd_morning)
+
+    selftest_cmd = sub.add_parser(
+        "selftest", help="false-alarm floor, measured on known-correct speech"
+    )
+    selftest_cmd.add_argument("--limit", type=int, default=None, help="only N words")
+    selftest_cmd.add_argument("--refresh", action="store_true", help="re-convert audio")
+    selftest_cmd.set_defaults(func=cmd_selftest)
 
     logs_cmd = sub.add_parser("logs", help="what the scheduled jobs did")
     logs_cmd.add_argument("--lines", type=int, default=30)

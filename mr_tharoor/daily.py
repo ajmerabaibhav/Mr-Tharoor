@@ -131,7 +131,16 @@ def findings_for(wav_path: str, text: str, label: str) -> list[Finding]:
     # Noisy audio does not get thrown away, it gets discounted. The pooling in
     # evidence.py already knows how to accumulate weak evidence; what it cannot
     # do is recover evidence a gate deleted.
-    quality_weight = result["quality"].get("weight", 1.0)
+    #
+    # Two independent questions, so two weights. SNR asks whether the
+    # microphone heard the room. Agreement asks whether the phoneme model
+    # followed the words at all -- and when it did not, the findings are
+    # alignment debris regardless of how clean the signal was. Measured, the
+    # recordings below 0.50 agreement produced findings six times faster per
+    # chance than the ones above it, at better SNR. See listen.agreement_weight.
+    quality_weight = result["quality"].get("weight", 1.0) * listen.agreement_weight(
+        result["agreement"]
+    )
     out: list[Finding] = []
     for index, diff in enumerate(result["scored"]):
         # The gate is on the DETECTOR's confidence alone. Noise is accounted

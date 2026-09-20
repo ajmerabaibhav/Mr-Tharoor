@@ -60,6 +60,7 @@ the report opens itself.
 | `roy listen` | the all-day loop. Context-aware, sleeps when you are not talking |
 | `roy gate` | should it be listening right now, and why |
 | `roy mictest` | compare microphone setups by measuring, not guessing |
+| `roy selftest` | false-alarm floor, measured on known-correct speech. No labelling |
 | `roy check` | judge its findings, so accuracy becomes a number |
 | `roy score` | what your answers add up to, with honest intervals |
 | `roy drill` | hear it, say it, hear it again |
@@ -165,22 +166,79 @@ small samples disqualify themselves without a rule: 1 wrong out of 1 scores
 
 ## Honest limits
 
-**Accuracy is unmeasured.** Every threshold in `evidence.py` is a judgement
-call. `roy check` is the only thing that turns them into settings.
+**Accuracy has a floor now, measured without asking anyone anything.**
+`roy selftest` runs the detector over the human recordings already cached
+for the report. Those are native speakers saying the word properly, so every
+finding it produces is a false alarm by construction. No labelling, no
+opinion, 25 seconds. On 86 words: **1 false alarm in 127 chances (0.8%, at
+most 3.0%)**, and the one was `æ -> ɛ` in unstressed *than*, which is
+reduction rather than error. Consonants: **0 in 113**.
 
-**Badly mispronounced words cannot be recovered.** Whisper heard *version* as
-*mission* and *vulnerable* as *wondering* — both /v/ words from a speaker who
-produces /w/. It was transcribing what was actually said. To judge how a word
-was pronounced we need to know which word was meant, and the only evidence is
-a pronunciation wrong enough to change the word. Live audio produced 3 findings
-where a scripted probe produced 32.
+That is a floor, not the rate you would see in a meeting: single words, read
+carefully, by a speaker who does not have the habit being hunted. It bounds
+false alarms and says nothing at all about recall. Per contrast the sample
+is still thin — zero out of eight chances for /v/ means "at most 21%", not
+"never" — so the aggregate is the number worth quoting. `roy check` remains
+the only thing that measures findings from your own speech, and nobody has
+run it yet.
 
-**Audio quality is the binding constraint.** A first real session measured
-12 dB signal-to-noise against 37 dB on reference recordings. Findings from it
-are weighted down to 36%. Recording a hand-span from the microphone does more
-than any algorithm: measured, gain normalisation changes nothing (the model
-already normalises) and spectral subtraction raises SNR 15 dB while improving
-recognition by zero.
+**Two things decide whether a recording is worth anything, not one.**
+Signal-to-noise asks whether the microphone heard the room. Phoneme
+agreement — how much of the expected sequence the model actually matched —
+asks whether it followed the words at all. Measured on 14 dictations:
+
+| agreement | recordings | findings | chances | rate |
+|---|---|---|---|---|
+| below 0.50 | 3 | 33 | 213 | **15.5%** |
+| 0.50 and above | 11 | 57 | 2,356 | **2.4%** |
+
+Six times the finding rate from audio the model was not following, and SNR
+does not predict which is which: the worst of the three had the second-best
+signal in the set (32.9 dB), and the cleanest recording of all (43.7 dB) sat
+at 0.53. When the model is not tracking the words the aligner pairs sounds
+that have nothing to do with each other, and the debris looks exactly like a
+finding. Both axes now weight the evidence. For scale, the 86 reference
+recordings score 0.87.
+
+**Badly mispronounced words still cannot be recovered — now tested, not
+assumed.** Whisper heard *version* as *mission* and *vulnerable* as
+*wondering*, both /v/ words from a speaker who produces /w/. It was
+transcribing what was actually said. Two ways out, both measured, both empty:
+
+- *Confusion-aware dictionary lookup.* Collapse every sound you confuse into
+  one symbol, index CMUdict by the result, look up what was actually
+  produced. 82% of keys map to exactly one word, so the idea is sound. On
+  the 20 probe recordings it recovered **0 of 57** substituted words: at this
+  audio quality the produced phonemes are not merely confused but truncated
+  and garbled — *grew* came out `nkdeɪ`, *vet* came out `wɛ` — and no lookup
+  repairs that.
+- *Wispr's own record.* Wispr stores what its recogniser heard beside what
+  you meant, which should expose any word a mispronunciation turned into a
+  different real word. Across **201 dictations: zero** such pairs.
+
+So the circularity stands. What changed is what follows from it: recovery
+only matters on the own-microphone path, and that path has a larger problem.
+
+**Audio quality is the binding constraint, and the two sources are nowhere
+near each other.** Measured on this machine:
+
+| source | median SNR | usable | full weight |
+|---|---|---|---|
+| Wispr Flow's own audio | **24.0 dB** | 100% | 36% |
+| own microphone, scripted probe | 11.9 dB | 100% | 0% |
+| own microphone, an ordinary day | **3.1 dB** | 18% | 8% |
+
+Eighteen decibels apart, and no algorithm closes that: gain normalisation
+changes nothing (the model already normalises) and spectral subtraction
+raises SNR 15 dB while improving recognition by zero. Recording a hand-span
+from the microphone is worth about 12 dB. Distance is the only lever and you
+are the only one who can pull it.
+
+So the listener no longer keeps what the analyser is going to refuse — on
+the day measured, 82% of what its own microphone collected — and `roy logs`
+and the morning notification tell you how many went in the bin, while you
+can still move. Wispr's path needs none of it: close microphone, and it
+already knows the words.
 
 **macOS only.** About half the code is portable Python; the other half is
 CoreAudio session enumeration and Apple's voice processing, neither of which

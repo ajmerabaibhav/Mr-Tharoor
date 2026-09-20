@@ -176,6 +176,35 @@ def test_cache_is_fast_and_offline():
     print(f"cached lookup               ok  ({elapsed * 1000:.1f}ms, {entry.accent})")
 
 
+def test_renaming_the_checkout_does_not_orphan_the_audio():
+    """The index stores absolute paths; renaming the folder broke 94 of 95.
+
+    Each orphan would have been silently re-downloaded, one a second, inside
+    a 90 second nightly budget -- so the report would have gone days without
+    the human recording that is the entire point of it.
+    """
+    from dataclasses import replace
+
+    real = d.Pronunciation(
+        word="version", ipa="/x/", audio_path=str(d.config.AUDIO_DIR / "version.mp3"),
+        accent="en-us", source="wiktionary",
+    )
+    d.config.AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    made = not Path(real.audio_path).exists()
+    if made:
+        Path(real.audio_path).write_bytes(b"not really audio")
+    try:
+        stale = replace(real, audio_path="/Users/someone/mr-roy/cache/audio/version.mp3")
+        assert d._relocate(stale).audio_path == real.audio_path, "orphan not recovered"
+        # A file that genuinely is not there must stay missing, not be invented.
+        gone = replace(real, audio_path="/Users/someone/mr-roy/cache/audio/nosuch.mp3")
+        assert d._relocate(gone).audio_path == gone.audio_path, "invented a file"
+    finally:
+        if made:
+            Path(real.audio_path).unlink(missing_ok=True)
+    print("moved checkout keeps audio  ok")
+
+
 def main() -> int:
     test_commons_url_capitalisation()
     test_pick_audio_requires_the_word()
@@ -186,6 +215,7 @@ def main() -> int:
     test_ipa_from_english_section_only()
     test_transient_errors_are_not_cached()
     test_cache_is_fast_and_offline()
+    test_renaming_the_checkout_does_not_orphan_the_audio()
     print("\nPASS")
     return 0
 

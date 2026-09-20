@@ -43,6 +43,26 @@ from . import config, evidence
 
 LABELS_FILE = config.DATA_DIR / "labels.json"
 
+# --- the false-alarm floor, measured without asking anyone anything --------
+#
+# `roy check` is honest but expensive: it needs twenty minutes of someone
+# judging their own speech, and until that happens every threshold in
+# evidence.py is a guess. There is one measurement that needs no human at
+# all, and it was sitting in the cache the whole time.
+#
+# dictionary.py has already downloaded human recordings of correct American
+# English for every word the report has ever named. Run the detector over
+# those and every finding it produces is a false alarm BY CONSTRUCTION: a
+# native speaker said the word properly. No labelling, no opinion, no wait.
+#
+# What it measures: the floor. Single words, read carefully, in a quiet room,
+# by someone who does not have the habit being hunted. A detector that cries
+# wolf here certainly cries wolf in a meeting. It says nothing about recall
+# and nothing about connected speech, where sounds legitimately reduce and
+# drop -- so a clean result is a necessary condition, never a sufficient one.
+SELFTEST_DIR = config.DATA_DIR / "selftest"
+REFERENCE_ACCENT = "en-us"  # what CMUdict describes; anything else scores accent
+
 # Judgements you can give a single flagged or sampled item.
 HIT = "hit"  # he flagged it and you agree you said it wrong
 FALSE_ALARM = "false_alarm"  # he flagged it and you said it fine
@@ -166,6 +186,91 @@ class Scorecard:
         if est >= 0.50:
             return "Too noisy to trust. Raise REPORT_THRESHOLD in evidence.py."
         return "Broken. More than half the flags are wrong. Do not tune, debug."
+
+
+def selftest(limit: int | None = None, refresh: bool = False) -> dict:
+    """Run the detector on known-correct speech and count what it flags."""
+    import subprocess
+    from collections import Counter
+    from pathlib import Path
+
+    from . import dictionary, listen
+
+    SELFTEST_DIR.mkdir(parents=True, exist_ok=True)
+    entries = [
+        e
+        for e in dictionary.cached_entries()
+        if e.is_human and e.accent == REFERENCE_ACCENT and e.audio_path
+        and Path(e.audio_path).exists()
+    ]
+    entries.sort(key=lambda e: e.word)
+    if limit:
+        entries = entries[:limit]
+
+    false_by: Counter = Counter()
+    chances_by: Counter = Counter()
+    chances_total_seen = [0]
+    agreements: list[float] = []
+    examples: list[tuple[str, str, str, str]] = []
+    # A phoneme can be a chance for more than one contrast: /d/ is the
+    # expected sound for both "d->retroflex" and "final-d". Keyed by phoneme
+    # in a plain dict, the second silently replaced the first and that
+    # contrast's chances read zero.
+    wanted: dict[str, list[str]] = {}
+    for name, (want, _) in listen.CONTRASTS.items():
+        wanted.setdefault(want, []).append(name)
+
+    for entry in entries:
+        wav = SELFTEST_DIR / f"{entry.word}.wav"
+        if refresh or not wav.exists():
+            # afconvert ships with macOS and reads every format Commons
+            # serves. One subprocess beats a decoding dependency.
+            done = subprocess.run(
+                ["afconvert", "-f", "WAVE", "-d", "LEI16@16000", "-c", "1",
+                 entry.audio_path, str(wav)],
+                capture_output=True,
+            )
+            if done.returncode != 0:
+                continue
+        try:
+            result = listen.analyse(str(wav), entry.word)
+        except Exception:  # noqa: BLE001  a bad clip must not stop the measurement
+            continue
+        agreements.append(result["agreement"])
+        for (_word, phoneme), count in result["chances"].items():
+            for name in wanted.get(phoneme, ()):
+                chances_by[name] += count
+            if phoneme in wanted:
+                # Totals count each sound once, however many ways it can go
+                # wrong, or a /d/-heavy word would deflate the rate twice.
+                chances_total_seen[0] += count
+        for diff in result["scored"]:
+            false_by[diff.contrast] += 1
+            examples.append((entry.word, diff.contrast or "", diff.expected or "",
+                             diff.actual or ""))
+
+    false_total = sum(false_by.values())
+    chances_total = chances_total_seen[0]
+    return {
+        "words": len(agreements),
+        "false_alarms": false_total,
+        "chances": chances_total,
+        "rate": _interval(false_total, chances_total)[1] if chances_total else 0.0,
+        "upper": _interval(false_total, chances_total)[2] if chances_total else 1.0,
+        "mean_agreement": (sum(agreements) / len(agreements)) if agreements else 0.0,
+        "contrasts": {
+            name: {
+                "false": false_by[name],
+                "chances": chances_by[name],
+                # The upper bound is the number that matters. Zero out of nine
+                # is not "never happens", it is "at most one time in three".
+                "upper": _interval(false_by[name], chances_by[name])[2],
+            }
+            for name in listen.CONTRASTS
+            if chances_by[name]
+        },
+        "examples": examples,
+    }
 
 
 def scorecard(since: date | None = None) -> Scorecard:

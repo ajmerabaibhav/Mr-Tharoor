@@ -130,6 +130,49 @@ def test_contrast_summary_ranks_sounds():
     print("contrast summary            ok")
 
 
+def test_quality_has_two_axes():
+    """Signal-to-noise and agreement answer different questions.
+
+    MEASURED on 14 dictations: recordings where the phoneme model matched
+    under half the expected sequence produced findings at 15.5% per chance,
+    against 2.4% above it -- and SNR did not predict which was which. The
+    worst of them had the second-best signal in the set, 32.9 dB. Without
+    the second axis those findings enter the tally at full weight.
+    """
+    from mr_tharoor import listen
+
+    assert listen.agreement_weight(0.16) == 0.0, "untracked speech must not count"
+    assert listen.agreement_weight(0.33) == 0.0
+    assert listen.agreement_weight(0.87) == 1.0, "clean reference speech is full weight"
+    assert 0 < listen.agreement_weight(0.51) < 1, "the middle is a ramp, not a cliff"
+    ramp = [listen.agreement_weight(a / 100) for a in range(30, 70)]
+    assert ramp == sorted(ramp), "weight must never fall as agreement rises"
+    print(f"agreement is a second axis  ok  (0.43 -> {listen.agreement_weight(0.43)})")
+
+
+def test_snr_of_a_buffer():
+    """The listener judges a chunk before writing it, and must agree with the
+    analyser that judges it afterwards. Two definitions would mean recordings
+    kept at capture and thrown away at 23:30, every night, invisibly."""
+    import numpy as np
+
+    from mr_tharoor import listen
+
+    rate = 16000
+    rng = np.random.default_rng(0)
+    hiss = rng.normal(0, 0.01, rate).astype("float32")
+    speech = hiss.copy()
+    speech[rate // 4 : 3 * rate // 4] += (
+        0.3 * np.sin(2 * np.pi * 180 * np.arange(rate // 2) / rate)
+    ).astype("float32")
+
+    quiet, loud = listen.snr_of(hiss, rate), listen.snr_of(speech, rate)
+    assert quiet < listen.MIN_SNR_DB, f"steady hiss scored {quiet:.0f} dB as usable"
+    assert loud > quiet + 10, f"a burst in the same hiss only gained {loud - quiet:.0f} dB"
+    assert listen.snr_of(np.zeros(rate, dtype="float32"), rate) == -99.0
+    print(f"snr of a buffer             ok  ({quiet:.0f} dB hiss, {loud:.0f} dB speech)")
+
+
 def main() -> int:
     test_incomplete_beta_matches_known_values()
     test_ppf_inverts_cdf()
@@ -140,6 +183,8 @@ def main() -> int:
     test_evidence_decays_but_does_not_vanish()
     test_more_evidence_tightens_the_bound()
     test_contrast_summary_ranks_sounds()
+    test_quality_has_two_axes()
+    test_snr_of_a_buffer()
     print("\nPASS")
     return 0
 
