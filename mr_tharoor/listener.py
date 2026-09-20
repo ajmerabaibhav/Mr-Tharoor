@@ -5,7 +5,9 @@ runs all day and turns a decision into audio on disk.
 
     context.decide()
         |
-        +-- ALWAYS  a call, a huddle, dictation. Record in chunks until it ends.
+        +-- ALWAYS  record in chunks until it ends. Nothing asks for this
+        |           any more: see context.decide(). Kept because the loop is
+        |           the part that would need writing again.
         |
         +-- SAMPLE  you might be reading aloud. Open the mic for half a second,
         |           check for speech, and either commit to recording or go back

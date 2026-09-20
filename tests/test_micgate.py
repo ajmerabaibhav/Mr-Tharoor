@@ -112,12 +112,19 @@ def test_dictation_helper_is_not_a_stranger():
             f"wispr helper gave {decision.mode}: {decision.reason}"
         )
 
-        # A genuine stranger on the mic must still record.
+        # And a call must not be recorded at all: the voice path spoils it,
+        # our share of a shared microphone measures 3-6 dB, and the other
+        # person never agreed to have their pronunciation scored.
         micgate.mic_users = lambda: [micgate.MicUser(pid=2, bundle_id="us.zoom.xos")]
-        assert context.decide().mode == context.LISTEN_ALWAYS, "a call must still record"
+        decision = context.decide()
+        assert decision.mode == context.LISTEN_NEVER, (
+            f"a call gave {decision.mode}: {decision.reason}"
+        )
+        assert not decision.listening, "listening during someone else's call"
     finally:
         micgate.mic_users = real_users
     print("wispr helper -> SKIP        ok")
+    print("someone else's call -> NEVER ok")
 
 
 def main() -> int:

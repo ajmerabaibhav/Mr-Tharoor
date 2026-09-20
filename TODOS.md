@@ -38,14 +38,21 @@ ordinary day against 24.0 dB through Wispr. No code fixes that.
 
 | # | What | Severity | Where |
 |---|------|----------|-------|
-| 1 | **No speaker filter.** In a meeting the microphone hears everyone, and a colleague's pronunciation scores as yours. Also the consent story. ~150 lines with voice enrolment. | High | `listener.py` |
+| 1 | **No speaker filter**, so meetings are simply not recorded any more: the microphone stays shut while another app holds it. That removes the consent problem and the wrong-speaker data, and gives up the only source for meetings. ~150 lines with voice enrolment would buy it back. | Medium | `context.py` |
 | 2 | **Grammar "correct" side is an LLM's opinion.** Wispr's cleaned text is a model's rewrite, not ground truth, except where you edited it by hand. A style preference can read as a correction. The filter is strict, but not perfect. | Medium | `grammar.py` |
 | 3 | **Reading-aloud detection is energy plus zero-crossing.** A radio in the next room can pass it. The SNR gate and the nightly analysis catch most of that downstream, at the cost of a wasted 30s recording. | Medium | `listener.py` |
 | 4 | **Wispr schema dependency.** Another company's private database. The reader checks the schema and fails loudly, but a Wispr release can still break the primary source overnight. Fallback is the listener. | Medium | `wispr.py` |
 | 5 | **Whisper cannot recover badly-said words** on our own recordings (not Wispr's). *version* became *mission*. Two recovery routes have now been tried and measured empty — see below. Only Wispr's text, or `roy check`, tells those apart. | Medium | `listen.py` |
 | 8 | **The own-microphone path barely earns its keep.** 3.1 dB median on a real day against 24.0 dB through Wispr; 82% of a day's chunks are now dropped at capture for being under the analyser's floor. It still covers meetings and reading aloud, which Wispr never hears, but it is a weak second source and the report should probably say which source a finding came from. | Medium | `listener.py` |
-| 6 | **Voice path still ducks other audio on calls.** Apple's echo cancellation has no true off switch, only a minimum level. Acceptable on a call (the call app ducks anyway); the design now keeps the voice path out of every other situation. | Low | `capture.py` |
+| 6 | ~~Voice path ducks other audio on calls.~~ Fixed by not recording during calls at all. Apple's echo cancellation still has no true off switch, so if `LISTEN_ALWAYS` is ever restored this comes back with it. | – | `capture.py` |
 | 7 | **Windows.** ~49% of the code is portable. The missing half is CoreAudio process enumeration and voice processing, with no clean equivalent. Not until the Mac version is validated. | Low | – |
+
+### Fixed today, after a call went wrong
+
+- The listener opened the microphone alongside a WhatsApp call, recorded 30
+  second chunks through Apple's voice path, and audibly degraded the call.
+  It no longer opens the microphone while any other app holds it. Three
+  reasons, only one of them the noise: see `context.decide`. `2026-09-20`
 
 ### Tried, measured, dead
 

@@ -89,10 +89,10 @@ prepositions, number, verb form, and Indian English fixed phrases like
 The reader checks Wispr's schema before trusting anything and fails loudly
 if a release changes it.
 
-**Its own microphone**, for everything Wispr does not hear: a Google Meet, a
-WhatsApp call, reading aloud in Claude or ChatGPT. Words come from Whisper
-here, which is weaker than Wispr's text, so these findings count for a little
-less.
+**Its own microphone**, for reading aloud: a page in Claude, a PDF, your
+notes. Words come from Whisper here, which is weaker than Wispr's text, so
+these findings count for a little less. Calls and meetings are deliberately
+not recorded — see below.
 
 ## How it decides to listen
 
@@ -101,14 +101,32 @@ system a question costs microseconds. So three signals, cheapest first:
 
 ```
 1. is another app on the mic?   free, the OS knows. A call, a huddle.
+                                Stay out of it. See below.
 2. what is in front of you?     1 microsecond. Claude, a PDF, your notes.
 3. is anything playing sound?   free. A browser making noise is a video.
 ```
 
 The microphone opens only when 2 says *maybe* and 3 says *silent*, and then in
-half-second peeks rather than continuously. A dictation app running while a
-speech service holds the mic means you are talking deliberately into a close
-microphone, so that records straight away.
+half-second peeks rather than continuously.
+
+**It never opens while another app has the microphone.** That reads as an odd
+choice — a call is a conversation, and conversation is what this listens for —
+so here is the reasoning, which is three separate problems rather than one:
+
+- **It spoils the call.** Apple's voice processing reconfigures the shared
+  input device and ducks other audio, and there is no true off switch, only a
+  minimum level. Reported from a real call, which is what changed this.
+- **The audio is poor anyway.** Our share comes back about 4.5x quieter while
+  another app holds the device: 3–6 dB median against 24 dB through Wispr,
+  most of it below the analyser's own floor. It was recorded, stored, decoded
+  at 23:30, and deleted.
+- **It is not your voice.** A call has someone else in it, there is no speaker
+  filter, and their pronunciation was being scored as yours.
+
+What that gives up is meetings, the one case with no other source. Dictation
+comes from Wispr's own database and reading aloud from the sampling path, both
+untouched. A speaker filter is the only thing standing between here and
+meetings working again.
 
 Measured: **8.3 seconds of CPU across a 14 hour day**, 29 MB resident.
 
@@ -159,8 +177,9 @@ small samples disqualify themselves without a rule: 1 wrong out of 1 scores
 - Silence is never written to disk.
 - `data/`, `cache/`, `reports/` and `logs/` are gitignored. This repo contains
   no recordings.
-- In a meeting the microphone hears everyone. **There is no speaker filter
-  yet**, so other people's speech is analysed too. See TODOS.md.
+- **The microphone never opens while another app has it**, so a call is not
+  recorded and the person on the other end is not analysed. There is still no
+  speaker filter; this is what stands in for one.
 
 ---
 

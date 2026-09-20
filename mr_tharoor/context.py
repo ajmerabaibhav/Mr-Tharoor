@@ -12,7 +12,8 @@ rarely as possible while still being there when you read.
 Three signals, cheapest first, and the order is the whole design:
 
   1. IS ANOTHER APP ON THE MIC?   Free. The OS knows. A call, a huddle,
-     dictation. Listen, no questions.
+     dictation. Stay out of it -- see decide() for why this used to be the
+     opposite.
 
   2. WHAT IS IN FRONT?            One microsecond. If you are looking at
      Claude, ChatGPT, a PDF or your notes, reading aloud is plausible, so it
@@ -137,7 +138,10 @@ DICTATION_APPS = frozenset(
 )
 
 LISTEN_NEVER = "never"  # nothing to hear, stay asleep
-LISTEN_ALWAYS = "always"  # a conversation is happening, record it
+LISTEN_ALWAYS = "always"  # record without asking. Nothing returns this now:
+# every conversation has someone else in it and there is no speaker filter.
+# The listener still honours it, so a speaker filter is the only thing
+# standing between here and meetings working again.
 LISTEN_SAMPLE = "sample"  # might be reading aloud, peek occasionally
 LISTEN_SKIP = "skip"  # someone else is already recording this for us
 
@@ -248,9 +252,33 @@ def decide() -> Decision:
         and not dictation_app(h.bundle_id or "")
     ]
     if real:
+        # Another app is capturing, which almost always means a call. This
+        # used to be LISTEN_ALWAYS -- open the microphone too and record 30
+        # second chunks through Apple's voice path. That was three bad things
+        # at once, and only the first is obvious:
+        #
+        #   it spoils their call    voice processing reconfigures the shared
+        #                           input device and ducks other audio, and
+        #                           Apple gives no true off switch, only a
+        #                           minimum level. Reported from a real call.
+        #   the audio is poor       our share comes back about 4.5x quieter
+        #                           while another app holds the device.
+        #                           Measured 3-6 dB median against 24 dB
+        #                           through Wispr; most of it under the
+        #                           analyser's own floor, recorded and then
+        #                           deleted at 23:30.
+        #   it is not your voice    a call has someone else in it, there is
+        #                           no speaker filter, and their pronunciation
+        #                           scored as yours.
+        #
+        # None of the three is fixable from this side. Dictation is covered by
+        # Wispr's own database and reading aloud by the sampling path, so what
+        # this gives up is meetings -- the one case with no other source. Put
+        # LISTEN_ALWAYS back here when there is a speaker filter to make it
+        # honest; until then it would be recording your mother.
         return Decision(
-            LISTEN_ALWAYS,
-            f"{real[0].bundle_id or 'an app'} is using the microphone",
+            LISTEN_NEVER,
+            f"{real[0].bundle_id or 'an app'} has the microphone; staying out of it",
             frontmost(),
         )
 
@@ -269,9 +297,6 @@ def decide() -> Decision:
             f"{holders[0].bundle_id} has the mic, which may just be Siri",
             front,
         )
-    if front in CALL_APPS:
-        return Decision(LISTEN_ALWAYS, "a call app is in front", front)
-
     if front in READING_APPS:
         noisy = playing_media(front)
         if noisy:
