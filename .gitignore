@@ -4,8 +4,8 @@ reports/
 __pycache__/
 *.pyc
 .venv/
-phoneme_ledger.egg-info/
-mr_roy.egg-info/
+*.egg-info/
 logs/
 .pytest_cache/
+*.DS_Store
 *.egg-info/

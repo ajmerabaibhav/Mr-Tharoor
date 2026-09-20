@@ -1,3 +1,0 @@
-[console_scripts]
-roy = mr_tharoor.cli:main
-tharoor = mr_tharoor.cli:main
