@@ -24,11 +24,21 @@ from pathlib import Path
 
 from . import config, daily
 
-CHROMIUM = (
-    Path.home()
-    / "Library/Caches/ms-playwright/chromium_headless_shell-1234"
-    / "chrome-headless-shell-mac-arm64/chrome-headless-shell"
-)
+def _find_chromium() -> Path | None:
+    """Find a local headless browser without pinning one Playwright revision."""
+    cache = Path.home() / "Library" / "Caches" / "ms-playwright"
+    candidates = sorted(
+        cache.glob("chromium_headless_shell-*/chrome-headless-shell-mac-arm64/chrome-headless-shell"),
+        reverse=True,
+    )
+    candidates += [
+        Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+        Path("/Applications/Chromium.app/Contents/MacOS/Chromium"),
+    ]
+    return next((path for path in candidates if path.is_file() and path.stat().st_mode & 0o111), None)
+
+
+CHROMIUM = _find_chromium()
 
 CONTRAST_NAMES = {
     "v->w": "V becomes W", "w->v": "W becomes V", "th->t": "TH becomes T",
@@ -186,15 +196,24 @@ def write(findings: list, day: date | None = None, grammar: list[dict] | None = 
     html_path.write_text(build_html(findings, day, grammar), encoding="utf-8")
     out = {"html": str(html_path)}
 
-    if CHROMIUM.exists():
+    if CHROMIUM is not None:
         pdf = html_path.with_suffix(".pdf")
-        result = subprocess.run(
-            [str(CHROMIUM), "--headless", "--no-sandbox", "--disable-gpu",
-             f"--print-to-pdf={pdf}", f"file://{html_path}"],
-            capture_output=True, timeout=120,
-        )
-        if result.returncode == 0 and pdf.exists():
-            out["pdf"] = str(pdf)
+        base = [str(CHROMIUM), "--headless", "--no-sandbox", "--disable-gpu",
+                "--disable-dev-shm-usage", f"--print-to-pdf={pdf}", f"file://{html_path}"]
+        # Chromium's macOS headless helper can fail before startup when the
+        # session cannot register its Mach rendezvous service. Single-process
+        # mode avoids that crash and still renders this local, self-contained
+        # page. Try the normal mode first, then the compatible fallback.
+        for extra in ([], ["--single-process"]):
+            pdf.unlink(missing_ok=True)
+            try:
+                result = subprocess.run(base[:1] + extra + base[1:],
+                                        capture_output=True, timeout=120)
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if result.returncode == 0 and pdf.exists() and pdf.stat().st_size > 1000:
+                out["pdf"] = str(pdf)
+                break
 
     docx = html_path.with_suffix(".docx")
     result = subprocess.run(
