@@ -1,17 +1,20 @@
 """Keep all automated checks away from the user's speech and judgement history."""
 
 import sys
+import logging
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mr_tharoor import accuracy, config, remind, schedule, streaks, wispr
+from mr_tharoor import accuracy, config, log, remind, schedule, streaks, wispr
 
 
 @pytest.fixture(autouse=True)
 def isolated_data(tmp_path, monkeypatch):
+    # Deliberately failing export tests must not look like production failures.
+    monkeypatch.setattr(log, "get", lambda name="": logging.getLogger(f"tharoor-test.{name}"))
     for name, suffix in (("ROOT", ""), ("DATA_DIR", "data"), ("CLIPS_DIR", "data/clips"),
                          ("REPORTS_DIR", "reports"), ("CACHE_DIR", "cache"),
                          ("AUDIO_DIR", "cache/audio")):

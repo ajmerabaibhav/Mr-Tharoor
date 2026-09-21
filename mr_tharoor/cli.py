@@ -378,8 +378,12 @@ def cmd_install(args: argparse.Namespace) -> int:
         for line in schedule.status():
             print(f"  {line}")
         return 0
-    for line in schedule.install(dry_run=args.dry_run):
-        print(f"  {line}")
+    try:
+        for line in schedule.install(dry_run=args.dry_run):
+            print(f"  {line}")
+    except schedule.InstallationError as exc:
+        print(f"  Installation incomplete: {exc}")
+        return 1
     print("\n  A missed run is not skipped: launchd fires it when you next open the lid.")
     print("  Remove anytime with `roy install --remove`. Nothing needs sudo.")
     return 0
@@ -481,8 +485,12 @@ def cmd_setup(args: argparse.Namespace) -> int:
             problems.append("models")
 
     print("\n  5. schedule")
-    for line in schedule.install():
-        print(f"     {line}")
+    try:
+        for line in schedule.install():
+            print(f"     {line}")
+    except schedule.InstallationError as exc:
+        print(f"     {exc}")
+        problems.append("schedule")
 
     print("\n" + ("-" * 58))
     if problems:
@@ -668,12 +676,14 @@ def _analyse_day(args: argparse.Namespace) -> int:
         grammar_rows = [row for row in grammar.summarise(week, limit=10) if row["times"] >= 2]
         config.write_json_atomically(config.REPORTS_DIR / f"{when}-grammar.json", grammar_rows)
         added = remind.enqueue(selected, day=when)
-        written = report.write(findings, when, grammar=grammar_rows)
-        config.write_json_atomically(config.REPORTS_DIR / f"{when}-analysis.json", {
+        analysis = {
             "version": daily.ANALYSIS_VERSION, "completed_at": datetime.now().isoformat(),
             "sources": sources, "opportunities": sum(t.said for t in tallies),
             "candidates": len(findings), "shown": len(selected),
-        })
+        }
+        written = report.write(findings, when, grammar=grammar_rows, analysis=analysis)
+        analysis["outputs"] = sorted(written)
+        config.write_json_atomically(config.REPORTS_DIR / f"{when}-analysis.json", analysis)
 
     log.event("nightly_done", day=str(when), findings=len(findings),
               grammar=len(grammar_findings), cards=added, **sources)
@@ -681,6 +691,8 @@ def _analyse_day(args: argparse.Namespace) -> int:
           f"({len(grammar_rows)} habits), {added} new reminder cards")
     for kind, path in written.items():
         print(f"  {kind}: {path}")
+    if "pdf" not in written:
+        print("  PDF export is incomplete. The next scheduled check will retry from saved results.")
     return 0
 
 
@@ -688,27 +700,38 @@ def cmd_analyse_pending(args: argparse.Namespace) -> int:
     """Catch up retained days after sleep/login; completed days are not decoded again."""
     from datetime import datetime, timedelta
 
-    from . import daily
+    from . import daily, report
 
     now = datetime.now()
-    days = [now.date() - timedelta(days=n) for n in range(3, 0, -1)]
+    # Yesterday's review should not wait behind several days of old audio.
+    days = [now.date() - timedelta(days=n) for n in range(1, 4)]
     if (now.hour, now.minute) >= (23, 30):
         days.append(now.date())
+    failed = False
     for day in days:
         marker = config.REPORTS_DIR / f"{day}-analysis.json"
         if marker.exists():
             try:
                 completed = json.loads(marker.read_text())
+                completed_at = datetime.fromisoformat(completed["completed_at"])
                 if (completed.get("version") == daily.ANALYSIS_VERSION
-                        and (datetime.fromisoformat(completed["completed_at"]).date() > day
-                             or day == now.date())):
+                        and (completed_at.date() > day or (day == now.date()
+                             and (completed_at.hour, completed_at.minute) >= (23, 30)))):
+                    from . import schedule
+
+                    with schedule.job_lock("analysis") as acquired:
+                        if not acquired:
+                            print("  Analysis is already running; export recovery will retry later.")
+                            return 1
+                        if not report.repair_exports(day, completed):
+                            failed = True
+                            print(f"  {day}: PDF still unavailable; will retry at the next check.")
                     continue
             except (ValueError, TypeError, KeyError):
                 pass
         result = cmd_analyse_day(argparse.Namespace(day=str(day), force=args.force))
-        if result:
-            return result
-    return 0
+        failed = failed or bool(result)
+    return int(failed)
 
 
 def cmd_morning(args: argparse.Namespace) -> int:
