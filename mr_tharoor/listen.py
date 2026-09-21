@@ -176,6 +176,15 @@ class Diff:
         return self.contrast is not None
 
 
+def _cached_first(loader, *args, **kwargs):
+    """Use downloaded models without contacting the hub on every daily run."""
+    try:
+        return loader(*args, local_files_only=True, **kwargs)
+    except OSError:
+        # Fresh setup or missing cache files still need the one-time download.
+        return loader(*args, local_files_only=False, **kwargs)
+
+
 @lru_cache(maxsize=1)
 def _model():
     """Loaded once, lazily, so importing this module stays free.
@@ -192,11 +201,11 @@ def _model():
     from huggingface_hub import hf_hub_download
     from transformers import AutoModelForCTC, Wav2Vec2FeatureExtractor
 
-    extractor = Wav2Vec2FeatureExtractor.from_pretrained(MODEL_NAME)
-    with open(hf_hub_download(MODEL_NAME, "vocab.json")) as handle:
+    extractor = _cached_first(Wav2Vec2FeatureExtractor.from_pretrained, MODEL_NAME)
+    with open(_cached_first(hf_hub_download, MODEL_NAME, "vocab.json")) as handle:
         vocab = {index: symbol for symbol, index in json.load(handle).items()}
 
-    model = AutoModelForCTC.from_pretrained(MODEL_NAME)
+    model = _cached_first(AutoModelForCTC.from_pretrained, MODEL_NAME)
     model.eval()
     # MPS gives roughly a 3x speedup on Apple silicon and falls back cleanly.
     device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -591,7 +600,7 @@ def _whisper():
     # "go through the numbers together before Thursday" into "go through the
     # most together for photos". small gets that sentence perfectly. The
     # extra 2 seconds per chunk is nothing in a job that runs at 23:30.
-    return WhisperModel("small.en", device="cpu", compute_type="int8")
+    return _cached_first(WhisperModel, "small.en", device="cpu", compute_type="int8")
 
 
 # Below this, the recogniser was guessing at the word rather than hearing it.

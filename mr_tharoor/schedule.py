@@ -14,8 +14,8 @@ Three agents, deliberately separate so one failing never takes the others out:
                         something to hear. ~9 seconds of CPU across a 14 hour
                         day. Restarted if it dies, throttled so a crash loop
                         cannot spin the CPU.
-    com.tharoor.nightly   23:30, analyses the day. Skips itself on battery, so
-                        it never wakes up and drains a laptop in a bag.
+    com.tharoor.nightly   23:30 and every 15 minutes while awake, catches up
+                        retained days. Does not request a wake lock.
     com.tharoor.morning   08:30, opens the report and sends the day's reminders.
 
 Every agent runs as you, in your login session. Nothing installs to /Library,
@@ -25,7 +25,9 @@ what that removes is three files in ~/Library/LaunchAgents.
 
 from __future__ import annotations
 
+import os
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -111,7 +113,7 @@ def plist_for(label: str, job: dict) -> dict:
         "LowPriorityIO": True,
         "Nice": 5,  # never compete with whatever you are actually doing
         "ProcessType": "Background",
-        "EnvironmentVariables": {"MR_THAROOR_HOME": str(config.ROOT)},
+        "EnvironmentVariables": {"MR_THAROOR_HOME": str(config.ROOT), "PYTHONUNBUFFERED": "1"},
     }
 
 
@@ -133,10 +135,41 @@ def job_lock(name: str):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+class InstallationError(RuntimeError):
+    """The plist exists, but launchd did not confirm the job was installed."""
+
+
+def _domain() -> str:
+    return f"gui/{os.getuid()}"
+
+
+def _launchctl(*args: str):
+    return subprocess.run(["launchctl", *args], capture_output=True, text=True, timeout=15)
+
+
+def service_state(label: str) -> dict:
+    """Inspect the actual login service, not this shell's bootstrap namespace."""
+    result = _launchctl("print", f"{_domain()}/{label}")
+    if result.returncode:
+        return {"loaded": False, "detail": result.stderr.strip() or "not loaded"}
+    state = {"loaded": True}
+    for field in ("state", "pid", "runs", "last exit code"):
+        found = re.search(rf"^\s*{re.escape(field)} = (.+)$", result.stdout, re.M)
+        if found:
+            state[field] = found[1].strip()
+    return state
+
+
 def install(dry_run: bool = False) -> list[str]:
     """Write and load the agents. Idempotent: re-running just refreshes them."""
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
     written = []
+    failures = []
+    if not dry_run:
+        result = _launchctl("print", _domain())
+        if result.returncode:
+            raise InstallationError("Cannot access the macOS login session. Run `tharoor install` "
+                                    "from Terminal while logged in to the desktop.")
     for label, job in JOBS.items():
         path = AGENTS_DIR / f"{label}.plist"
         data = plist_for(label, job)
@@ -144,11 +177,26 @@ def install(dry_run: bool = False) -> list[str]:
             written.append(f"would write {path}")
             continue
         path.write_bytes(plistlib.dumps(data))
-        subprocess.run(["launchctl", "unload", str(path)], capture_output=True)
-        result = subprocess.run(["launchctl", "load", str(path)], capture_output=True)
-        state = "loaded" if result.returncode == 0 else result.stderr.decode().strip()
+        target = f"{_domain()}/{label}"
+        # Legacy `load` can exit successfully without installing a service in
+        # the desktop session. Bootstrap explicitly and verify the target.
+        if service_state(label)["loaded"]:
+            result = _launchctl("bootout", target)
+            if result.returncode:
+                failures.append(f"{label}: could not stop the old service: {result.stderr.strip()}")
+                continue
+        enabled = _launchctl("enable", target)
+        result = _launchctl("bootstrap", _domain(), str(path))
+        verified = service_state(label)
+        if enabled.returncode or result.returncode or not verified["loaded"]:
+            failures.append(f"{label}: installation failed: "
+                            f"{result.stderr.strip() or enabled.stderr.strip() or verified.get('detail')}")
+            continue
+        state = "loaded (verified)"
         when = "at login" if job.get("resident") else f"{job['hour']:02d}:{job['minute']:02d}"
         written.append(f"{label:<20} {when:<9} {state}")
+    if failures:
+        raise InstallationError("\n".join(written + failures))
     return written
 
 
@@ -157,7 +205,10 @@ def uninstall() -> list[str]:
     for label in JOBS:
         path = AGENTS_DIR / f"{label}.plist"
         if path.exists():
-            subprocess.run(["launchctl", "unload", str(path)], capture_output=True)
+            if service_state(label)["loaded"]:
+                result = _launchctl("bootout", f"{_domain()}/{label}")
+                if result.returncode:
+                    raise InstallationError(f"Could not unload {label}: {result.stderr.strip()}")
             path.unlink()
             removed.append(label)
     return removed
@@ -165,11 +216,15 @@ def uninstall() -> list[str]:
 
 def status() -> list[str]:
     out = []
-    listing = subprocess.run(["launchctl", "list"], capture_output=True, text=True).stdout
     for label, job in JOBS.items():
         path = AGENTS_DIR / f"{label}.plist"
         installed = "installed" if path.exists() else "not installed"
-        running = "loaded" if label in listing else "not loaded"
+        state = service_state(label)
+        running = "NOT LOADED" if not state["loaded"] else f"loaded, {state.get('state', 'waiting')}"
+        if state.get("pid"):
+            running += f" (PID {state['pid']})"
+        if state.get("last exit code") not in (None, "0", "(never exited)"):
+            running += f", last exit {state['last exit code']}"
         when = "at login" if job.get("resident") else f"{job['hour']:02d}:{job['minute']:02d}"
         out.append(f"{label:<20} {when:<9} {installed}, {running}   ({job['what']})")
     return out

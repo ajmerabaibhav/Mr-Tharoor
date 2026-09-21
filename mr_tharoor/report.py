@@ -18,8 +18,11 @@ from __future__ import annotations
 
 import base64
 import html
+import json
+import shutil
 import subprocess
-from datetime import date
+import tempfile
+from datetime import date, datetime
 from pathlib import Path
 
 from . import config, daily
@@ -127,7 +130,8 @@ def _grammar_html(habits: list[dict]) -> str:
     )
 
 
-def build_html(findings: list, day: date, grammar: list[dict] | None = None) -> str:
+def build_html(findings: list, day: date, grammar: list[dict] | None = None,
+               analysis: dict | None = None) -> str:
     grouped = daily.group(findings, day)
     bounds = daily.trustworthy_contrasts(findings, day)
     total = sum(len(items) for items in grouped.values())
@@ -176,53 +180,122 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None) -> 
     mood = "clear" if best >= 0.15 else ("likely" if best >= 0.08 else "watch")
     name = config.user_name()
     greeting = f"Good morning, {name}."
-    remark = OPENERS[mood]
+    remark = (OPENERS[mood] if grouped else
+              "The analysis is complete. No pronunciation pattern passed the evidence checks today.")
+    summary = ""
+    if analysis is not None:
+        sources = analysis.get("sources", {})
+        wispr_count = int(sources.get("wispr", 0))
+        own_count = int(sources.get("own", 0))
+        candidate_count = int(analysis.get("candidates", 0))
+        completed = str(analysis.get("completed_at", ""))
+        try:
+            generated = datetime.fromisoformat(completed).strftime("%d %B %Y at %H:%M")
+        except ValueError:
+            generated = completed or "time unavailable"
+        summary = (
+            '<div class="card"><div class="card-head">'
+            '<strong>Processing summary</strong><div class="words">'
+            f'{wispr_count} Wispr recording{"s" if wispr_count != 1 else ""} and '
+            f'{own_count} reading recording{"s" if own_count != 1 else ""} analysed; '
+            f'{int(analysis.get("opportunities", 0))} sound opportunities checked. '
+            f'{candidate_count} tentative candidate{"s" if candidate_count != 1 else ""}; '
+            f'{total} examples passed the evidence checks.</div>'
+            f'<div class="words">Generated {html.escape(generated)}'
+            ' (local time).'
+            + (' This is a partial-day report; analysis will run again after the day ends.'
+               if str(analysis.get("completed_at", ""))[:10] == str(day) else '')
+            + '</div></div></div>'
+        )
     return (
         TEMPLATE.replace("{{GREETING}}", html.escape(greeting))
         .replace("{{DATE}}", day.strftime("%A %d %B %Y"))
         .replace("{{TOTAL}}", str(total))
         .replace("{{SOUNDS}}", str(len(grouped)))
         .replace("{{CARDS}}", body)
+        .replace("{{SUMMARY}}", summary)
         .replace("{{GRAMMAR}}", _grammar_html(grammar or []))
         .replace("{{REMARK}}", html.escape(remark))
     )
 
 
-def write(findings: list, day: date | None = None, grammar: list[dict] | None = None) -> dict[str, str]:
+def valid_pdf(path: Path) -> bool:
+    try:
+        with path.open("rb") as stream:
+            return path.stat().st_size > 1000 and stream.read(5) == b"%PDF-"
+    except OSError:
+        return False
+
+
+def write(findings: list, day: date | None = None, grammar: list[dict] | None = None,
+          analysis: dict | None = None) -> dict[str, str]:
     """HTML always; PDF and Word when their tools are present."""
     day = day or date.today()
     config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     html_path = config.REPORTS_DIR / f"{day.isoformat()}.html"
-    html_path.write_text(build_html(findings, day, grammar), encoding="utf-8")
+    from . import log
+
+    logger = log.get("report")
+    html_path.write_text(build_html(findings, day, grammar, analysis), encoding="utf-8")
     out = {"html": str(html_path)}
 
     if CHROMIUM is not None:
         pdf = html_path.with_suffix(".pdf")
-        base = [str(CHROMIUM), "--headless", "--no-sandbox", "--disable-gpu",
-                "--disable-dev-shm-usage", f"--print-to-pdf={pdf}", f"file://{html_path}"]
         # Chromium's macOS headless helper can fail before startup when the
         # session cannot register its Mach rendezvous service. Single-process
         # mode avoids that crash and still renders this local, self-contained
         # page. Try the normal mode first, then the compatible fallback.
-        for extra in ([], ["--single-process"]):
-            pdf.unlink(missing_ok=True)
-            try:
-                result = subprocess.run(base[:1] + extra + base[1:],
-                                        capture_output=True, timeout=120)
-            except (OSError, subprocess.TimeoutExpired):
-                continue
-            if result.returncode == 0 and pdf.exists() and pdf.stat().st_size > 1000:
-                out["pdf"] = str(pdf)
-                break
+        with tempfile.TemporaryDirectory(prefix=".pdf-", dir=config.REPORTS_DIR) as scratch:
+            temporary = Path(scratch) / pdf.name
+            base = [str(CHROMIUM), "--headless", "--no-sandbox", "--disable-gpu",
+                    "--disable-dev-shm-usage", "--no-pdf-header-footer",
+                    f"--user-data-dir={Path(scratch) / 'profile'}",
+                    f"--print-to-pdf={temporary}", html_path.resolve().as_uri()]
+            for extra in ([], ["--single-process"]):
+                temporary.unlink(missing_ok=True)
+                try:
+                    result = subprocess.run(base[:1] + extra + base[1:],
+                                            capture_output=True, timeout=120)
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    logger.warning("PDF export attempt failed: %s", type(exc).__name__)
+                    continue
+                if result.returncode == 0 and valid_pdf(temporary):
+                    temporary.replace(pdf)
+                    out["pdf"] = str(pdf)
+                    break
+        if "pdf" not in out:
+            logger.warning("PDF export failed for %s; keeping any previous PDF and retrying later", day)
+    else:
+        logger.warning("PDF export unavailable: install Google Chrome or a Playwright Chromium browser")
 
     docx = html_path.with_suffix(".docx")
-    result = subprocess.run(
-        ["textutil", "-convert", "docx", str(html_path), "-output", str(docx)],
-        capture_output=True,
-    )
-    if result.returncode == 0 and docx.exists():
-        out["docx"] = str(docx)
+    if shutil.which("textutil"):
+        try:
+            result = subprocess.run(
+                ["textutil", "-convert", "docx", str(html_path), "-output", str(docx)],
+                capture_output=True, timeout=30,
+            )
+            if result.returncode == 0 and docx.exists():
+                out["docx"] = str(docx)
+        except (OSError, subprocess.TimeoutExpired):
+            logger.warning("Optional Word export failed for %s", day)
     return out
+
+
+def repair_exports(day: date, analysis: dict) -> bool:
+    """Retry a missing/failed export from saved results without decoding audio again."""
+    html_path = config.REPORTS_DIR / f"{day}.html"
+    if (html_path.exists() and valid_pdf(html_path.with_suffix(".pdf"))
+            and "pdf" in analysis.get("outputs", ["pdf"])):
+        return True
+    if not (config.REPORTS_DIR / f"{day}.json").exists():
+        return False
+    grammar_path = config.REPORTS_DIR / f"{day}-grammar.json"
+    grammar = json.loads(grammar_path.read_text()) if grammar_path.exists() else []
+    written = write(daily.load(day), day, grammar=grammar, analysis=analysis)
+    analysis["outputs"] = sorted(written)
+    config.write_json_atomically(config.REPORTS_DIR / f"{day}-analysis.json", analysis)
+    return "pdf" in written
 
 
 def open_report(day: date | None = None) -> str | None:
@@ -292,6 +365,7 @@ font:inherit;font-size:.8rem;cursor:pointer;color:var(--ink2)}
 <h1>What I heard you say</h1>
 <div class="remark">{{REMARK}}</div>
 <div class="sub">{{DATE}} &middot; {{TOTAL}} examples across {{SOUNDS}} sound patterns &middot; compare your voice with the reference</div>
+{{SUMMARY}}
 <h2 class="sect">Pronunciation</h2>
 {{CARDS}}
 {{GRAMMAR}}

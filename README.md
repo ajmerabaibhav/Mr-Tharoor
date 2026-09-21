@@ -1,5 +1,39 @@
 # Mr Tharoor
 
+## Automation and PDF recovery - 21 September 2026
+
+`tharoor install` now targets the macOS desktop login session explicitly and
+verifies each service after loading it. An unsuccessful installation exits
+with an error. `tharoor install --status` reports each service's actual state,
+PID when running, and any unsuccessful last exit. A plist on disk alone does
+not mean the service is running.
+
+Daily analysis prioritises yesterday, then catches up the other retained days.
+It retries missing PDF exports from saved results without running the speech
+models again. Failed exports preserve the previous PDF and are logged. PDFs
+require a local Chrome/Chromium browser; HTML is always generated. Reports
+include processing counts, the generation time, and a partial-day label when
+run before the day ends. A manual daytime report does not suppress the nightly
+analysis.
+
+Downloaded speech models are loaded from the local cache first. The hub is
+contacted only if required cache files are missing, so a network connection
+stall cannot block loading an already downloaded model.
+
+To investigate a missing report, use the Python environment where the project
+is installed:
+
+```bash
+tharoor install --status
+tharoor logs
+tharoor analyse-pending --force
+```
+
+The morning job opens the interactive HTML review, which includes audio
+playback. The matching PDF is stored in `reports/YYYY-MM-DD.pdf`. No new
+full-day PDF is expected at the start of that same day: the morning review
+covers the preceding day.
+
 ## Reliability update — 20 September 2026
 
 The speech-to-report pipeline now abstains when recognition is uncertain:
