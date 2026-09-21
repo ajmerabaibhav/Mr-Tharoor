@@ -135,6 +135,8 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
     grouped = daily.group(findings, day)
     bounds = daily.trustworthy_contrasts(findings, day)
     total = sum(len(items) for items in grouped.values())
+    confirmed_ids = {id(item) for items in grouped.values() for item in items}
+    candidates = [item for item in findings if id(item) not in confirmed_ids]
     rows = []
     for contrast, items in grouped.items():
         seen: set[str] = set()
@@ -176,12 +178,57 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
         "No pronunciation pattern passed the evidence checks. This may mean clear speech, "
         "too little audio, or uncertain recognition.</div></div></div>"
     )
+    candidate_cards = []
+    for finding in candidates[:8]:
+        sentence = html.escape(finding.sentence[:360])
+        if len(finding.sentence) > 360:
+            sentence += "…"
+        source = "Wispr dictation" if "wispr-" in finding.source else "Reading audio"
+        ipa = f' <span class="ipa">{html.escape(finding.ipa)}</span>' if finding.ipa else ""
+        candidate_cards.append(
+            '<div class="candidate-card">'
+            '<div class="candidate-head"><div>'
+            f'<span class="bad">/{html.escape(finding.said)}/</span>'
+            '<span class="arrow"> heard; expected </span>'
+            f'<span class="good">/{html.escape(finding.should_be)}/</span>'
+            f'<div class="candidate-word">{html.escape(finding.word)}{ipa}</div>'
+            '</div><span class="candidate-tag">candidate · not confirmed</span></div>'
+            f'<div class="words">{html.escape(CONTRAST_NAMES.get(finding.contrast, finding.contrast))}'
+            f' · confidence {finding.confidence:.0%} · audio quality {finding.quality:.0%} · {source}</div>'
+            f'<div class="candidate-transcript">“{sentence}”</div>'
+            '<div class="candidate-foot">A single or low-frequency signal is shown for review; '
+            'listen to the clip in the HTML report before practising.</div>'
+            '</div>'
+        )
+    candidate_html = (
+        '<div class="candidate-group"><h2 class="sect">Worth another listen</h2>'
+        '<div class="sub2">Possible pronunciation signals that did not yet meet the evidence threshold. '
+        'They are deliberately not labelled as mistakes.</div>'
+        + "".join(candidate_cards)
+        + '</div>'
+        if candidate_cards else ""
+    )
     best = max((bounds[c] for c in grouped), default=0.0)
     mood = "clear" if best >= 0.15 else ("likely" if best >= 0.08 else "watch")
     name = config.user_name()
     greeting = f"Good morning, {name}."
     remark = (OPENERS[mood] if grouped else
               "The analysis is complete. No pronunciation pattern passed the evidence checks today.")
+    clips = sum(bool(item.clip_path) for item in findings)
+    quality_values = [item.quality for item in findings if item.quality is not None]
+    quality = (sum(quality_values) / len(quality_values)) if quality_values else 0.0
+    stats = (
+        '<div class="stats">'
+        f'<div class="stat"><div class="stat-label">SOUNDS TO FIX</div><div class="stat-value">{len(grouped)}</div>'
+        '<div class="stat-note">confirmed patterns</div></div>'
+        f'<div class="stat"><div class="stat-label">MISTAKES FOUND</div><div class="stat-value">{total}</div>'
+        '<div class="stat-note">across reviewed examples</div></div>'
+        f'<div class="stat"><div class="stat-label">CLIPS TO HEAR</div><div class="stat-value">{clips}</div>'
+        '<div class="stat-note">voice clips available</div></div>'
+        f'<div class="stat"><div class="stat-label">EVIDENCE QUALITY</div><div class="stat-value">{quality:.0%}</div>'
+        '<div class="stat-note">average signal quality</div></div>'
+        '</div>'
+    )
     summary = ""
     if analysis is not None:
         sources = analysis.get("sources", {})
@@ -208,13 +255,23 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
             + '</div></div></div>'
         )
     return (
+        # Keep an explicit empty state: an absent section looks like a broken
+        # report, whereas this makes clear that grammar was checked too.
         TEMPLATE.replace("{{GREETING}}", html.escape(greeting))
         .replace("{{DATE}}", day.strftime("%A %d %B %Y"))
         .replace("{{TOTAL}}", str(total))
         .replace("{{SOUNDS}}", str(len(grouped)))
+        .replace("{{STATS}}", stats)
         .replace("{{CARDS}}", body)
+        .replace("{{CANDIDATES}}", candidate_html)
         .replace("{{SUMMARY}}", summary)
-        .replace("{{GRAMMAR}}", _grammar_html(grammar or []))
+        .replace("{{GRAMMAR}}", _grammar_html(grammar or []) or (
+            '<h2 class="sect">Phrasing</h2>'
+            '<div class="card"><div class="card-head"><div class="words">'
+            'No repeatable grammar pattern was found in this report. '
+            'The transcript was still checked and will be compared with future days.'
+            '</div></div></div>'
+        ))
         .replace("{{REMARK}}", html.escape(remark))
     )
 
@@ -325,10 +382,8 @@ def latest_day(before: date | None = None) -> date | None:
 
 TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
 <title>Mr Tharoor - {{DATE}}</title><style>
-:root{--ground:#F2F4F4;--surface:#fff;--ink:#101C1B;--ink2:#3A4A48;--muted:#697A78;
---rule:#D3DAD9;--accent:#0F6E68;--accentsoft:#D9EAE8;--crit:#A8261C}
-@media(prefers-color-scheme:dark){:root{--ground:#0C1312;--surface:#141D1C;--ink:#E7EDEC;
---ink2:#BCC9C7;--muted:#879896;--rule:#26332F;--accent:#56BEB4;--accentsoft:#12302E;--crit:#F08074}}
+:root{--ground:#0B1211;--surface:#141D1C;--surface2:#182321;--ink:#E7EDEC;--ink2:#BCC9C7;--muted:#879896;
+--rule:#2A3834;--accent:#69C7BE;--accentsoft:#153A36;--crit:#F08074;--gold:#E1B36A}
 *{box-sizing:border-box}body{background:var(--ground);color:var(--ink);margin:0;padding:28px 18px 70px;
 font:16px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
 .wrap{max-width:760px;margin:0 auto}h1{font-size:2rem;margin:0 0 4px;letter-spacing:-.02em}
@@ -343,6 +398,10 @@ font:16px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
 .rule{font-size:.78rem;color:var(--muted);font-style:italic;margin-top:4px}
 .kind{font-size:.7rem;color:var(--muted);margin-left:10px;text-transform:uppercase;letter-spacing:.06em}
 .card{background:var(--surface);border:1px solid var(--rule);margin-bottom:12px;overflow:hidden}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--rule);margin:18px 0 24px;background:var(--surface)}
+.stat{padding:13px 14px;border-right:1px solid var(--rule);min-height:86px}.stat:last-child{border-right:0}
+.stat-label{font-size:.66rem;color:var(--muted);letter-spacing:.1em;font-weight:700}.stat-value{font-size:1.65rem;line-height:1.2;margin-top:4px;color:var(--ink)}
+.stat-note{font-size:.72rem;color:var(--muted);margin-top:4px}
 .card-head{padding:14px 16px;border-bottom:1px solid var(--rule)}
 .swap{font-size:1.25rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .bad{color:var(--crit);font-weight:700}.good{color:var(--accent);font-weight:700}
@@ -358,16 +417,25 @@ font:inherit;font-size:.8rem;cursor:pointer;color:var(--ink2)}
 .pb.you{border-color:var(--crit);color:var(--crit)}
 .pb.right{border-color:var(--accent);color:var(--accent)}
 .pb[disabled]{opacity:.4;cursor:not-allowed}
+.candidate-card{background:var(--surface2);border:1px solid #6B5440;border-left:4px solid var(--gold);padding:15px 16px;margin-bottom:12px;break-inside:avoid}
+.candidate-group{break-inside:avoid}
+.candidate-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.candidate-word{font-size:1.12rem;font-weight:650;margin-top:4px}
+.candidate-tag{font-size:.68rem;color:var(--gold);border:1px solid #6B5440;border-radius:999px;padding:4px 8px;white-space:nowrap}
+.candidate-transcript{font-size:.84rem;color:var(--ink2);line-height:1.55;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:10px 0;margin-top:10px}
+.candidate-foot{font-size:.74rem;color:var(--muted);margin-top:9px}
 @media(max-width:620px){.ab{grid-template-columns:1fr}.buttons{justify-content:flex-start}}
-@media print{.pb{display:none}.card{break-inside:avoid}}
+@media(max-width:620px){.stats{grid-template-columns:repeat(2,1fr)}.stat:nth-child(2){border-right:0}.stat:nth-child(-n+2){border-bottom:1px solid var(--rule)}}
+@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.pb{display:none}.card{break-inside:avoid}body{padding-top:18px}}
 </style></head><body><div class="wrap">
 <div class="greet">{{GREETING}}</div>
 <h1>What I heard you say</h1>
 <div class="remark">{{REMARK}}</div>
 <div class="sub">{{DATE}} &middot; {{TOTAL}} examples across {{SOUNDS}} sound patterns &middot; compare your voice with the reference</div>
+{{STATS}}
 {{SUMMARY}}
 <h2 class="sect">Pronunciation</h2>
 {{CARDS}}
+{{CANDIDATES}}
 {{GRAMMAR}}
 <div class="tribute">Mr Tharoor is a fictional mascot, named in tribute to Dr Shashi Tharoor.
 This software is not affiliated with, endorsed by, or connected to him. Every word it speaks
