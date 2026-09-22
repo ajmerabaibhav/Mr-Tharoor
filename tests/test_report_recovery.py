@@ -89,6 +89,36 @@ def test_pdf_repair_uses_saved_results_and_updates_status(monkeypatch):
     assert "pdf" in json.loads((config.REPORTS_DIR / f"{day}-analysis.json").read_text())["outputs"]
 
 
+def test_open_report_puts_pdf_in_preview_after_interactive_review(monkeypatch):
+    day = date.today() - timedelta(days=1)
+    html_path = config.REPORTS_DIR / f"{day}.html"
+    pdf_path = html_path.with_suffix(".pdf")
+    html_path.write_text("report")
+    pdf_path.write_bytes(b"%PDF-1.4\n" + b"x" * 1200)
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(report.subprocess, "run", run)
+    assert report.open_report(day) == str(pdf_path)
+    assert calls == [
+        ["open", str(html_path)],
+        ["open", "-a", "Preview", str(pdf_path)],
+    ]
+
+
+def test_open_report_falls_back_to_html_when_pdf_is_missing(monkeypatch):
+    day = date.today() - timedelta(days=1)
+    html_path = config.REPORTS_DIR / f"{day}.html"
+    html_path.write_text("report")
+    monkeypatch.setattr(
+        report.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0)
+    )
+    assert report.open_report(day) == str(html_path)
+
+
 def test_pending_repairs_missing_export_without_reanalysing(monkeypatch):
     for back in range(1, 4):
         day = date.today() - timedelta(days=back)
@@ -108,6 +138,17 @@ def test_partial_day_and_processing_counts_are_visible():
     assert "5 Wispr recordings and 2 reading recordings analysed" in rendered
     assert "20 sound opportunities checked" in rendered
     assert "partial-day report" in rendered
+
+
+def test_empty_report_explains_abstention_without_claiming_zero_quality():
+    day = date.today() - timedelta(days=1)
+    rendered = report.build_html(
+        [], day, analysis={"completed_at": datetime.now().isoformat(), "opportunities": 51}
+    )
+    assert "checked 51 sound opportunities" in rendered
+    assert "does not prove the speech was error-free" in rendered
+    assert "no qualifying examples" in rendered
+    assert '<div class="stat-value">0%</div>' not in rendered
 
 
 def test_pending_prioritises_yesterday_and_continues_after_failure(monkeypatch):

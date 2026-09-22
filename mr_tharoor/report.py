@@ -10,8 +10,8 @@ Three formats out of one template, all local:
     PDF    headless Chromium, already on this machine
     DOCX   textutil, which ships with macOS
 
-PDF and Word are for keeping and sharing. Neither can play a recording, which
-is the whole product, so HTML is what actually opens in the morning.
+PDF and Word are for keeping and sharing. Neither can play a recording, so the
+morning job opens both the PDF in Preview and the interactive HTML review.
 """
 
 from __future__ import annotations
@@ -173,11 +173,22 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
             f"{blocks}</div>"
         )
 
-    body = "".join(rows) or (
-        '<div class="card"><div class="card-head"><div class="words">'
-        "No pronunciation pattern passed the evidence checks. This may mean clear speech, "
-        "too little audio, or uncertain recognition.</div></div></div>"
-    )
+    body = "".join(rows)
+    if not body:
+        opportunities = int((analysis or {}).get("opportunities", 0))
+        explanation = (
+            f"The system checked {opportunities} sound opportunities, but none formed a "
+            "repeatable pattern strong enough to call a mistake. This does not prove the "
+            "speech was error-free; it means there is no correction the evidence can "
+            "support today."
+            if opportunities
+            else "This may mean clear speech, too little audio, or uncertain recognition."
+        )
+        body = (
+            '<div class="card"><div class="card-head"><div class="words">'
+            f"No pronunciation pattern passed the evidence checks. {explanation}"
+            "</div></div></div>"
+        )
     candidate_cards = []
     for finding in candidates[:8]:
         sentence = html.escape(finding.sentence[:360])
@@ -216,7 +227,9 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
               "The analysis is complete. No pronunciation pattern passed the evidence checks today.")
     clips = sum(bool(item.clip_path) for item in findings)
     quality_values = [item.quality for item in findings if item.quality is not None]
-    quality = (sum(quality_values) / len(quality_values)) if quality_values else 0.0
+    quality = (sum(quality_values) / len(quality_values)) if quality_values else None
+    quality_value = f"{quality:.0%}" if quality is not None else "&mdash;"
+    quality_note = "average signal quality" if quality is not None else "no qualifying examples"
     stats = (
         '<div class="stats">'
         f'<div class="stat"><div class="stat-label">SOUNDS TO FIX</div><div class="stat-value">{len(grouped)}</div>'
@@ -225,8 +238,8 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
         '<div class="stat-note">across reviewed examples</div></div>'
         f'<div class="stat"><div class="stat-label">CLIPS TO HEAR</div><div class="stat-value">{clips}</div>'
         '<div class="stat-note">voice clips available</div></div>'
-        f'<div class="stat"><div class="stat-label">EVIDENCE QUALITY</div><div class="stat-value">{quality:.0%}</div>'
-        '<div class="stat-note">average signal quality</div></div>'
+        f'<div class="stat"><div class="stat-label">EVIDENCE QUALITY</div><div class="stat-value">{quality_value}</div>'
+        f'<div class="stat-note">{quality_note}</div></div>'
         '</div>'
     )
     summary = ""
@@ -356,12 +369,37 @@ def repair_exports(day: date, analysis: dict) -> bool:
 
 
 def open_report(day: date | None = None) -> str | None:
+    """Open the interactive review, then put its PDF visibly in front.
+
+    `open` returning zero only means LaunchServices accepted the request.  An
+    HTML tab can land behind an existing browser window and look as though the
+    morning job did nothing.  Preview is a distinct, visible destination and
+    is also the durable report the user expects to receive each morning.
+    """
     day = day or date.today()
-    path = config.REPORTS_DIR / f"{day.isoformat()}.html"
-    if not path.exists():
+    html_path = config.REPORTS_DIR / f"{day.isoformat()}.html"
+    if not html_path.exists():
         return None
-    result = subprocess.run(["open", str(path)], capture_output=True)
-    return str(path) if result.returncode == 0 else None
+
+    opened_html = False
+    try:
+        opened_html = subprocess.run(
+            ["open", str(html_path)], capture_output=True
+        ).returncode == 0
+    except OSError:
+        pass
+
+    pdf_path = html_path.with_suffix(".pdf")
+    if valid_pdf(pdf_path):
+        try:
+            result = subprocess.run(
+                ["open", "-a", "Preview", str(pdf_path)], capture_output=True
+            )
+            if result.returncode == 0:
+                return str(pdf_path)
+        except OSError:
+            pass
+    return str(html_path) if opened_html else None
 
 
 def latest_day(before: date | None = None) -> date | None:

@@ -779,10 +779,13 @@ def _morning(args: argparse.Namespace) -> int:
         name = config.user_name()
         thrown = log.too_far(day)
         if path:
+            delivered = "The PDF report is open in Preview."
+            if not path.endswith(".pdf"):
+                delivered = "The interactive report is open in your browser."
             body = (
                 f"{sounds} sound{'s' if sounds != 1 else ''} and "
                 f"{len(habits)} phrase{'s' if len(habits) != 1 else ''} from {day:%A}. "
-                f"The report is open."
+                f"{delivered}"
             )
             # Said here because here is where it can still change something:
             # the only lever on audio quality is how far away you sit.
