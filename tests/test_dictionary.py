@@ -66,7 +66,7 @@ def test_words_cannot_escape_the_cache_directory():
     wrote an mp3 outside the project entirely."""
     from mr_tharoor import config
 
-    for hostile in ("../../../../tmp/roy-escape", "/etc/passwd", "..\\..\\win", "a/b/c"):
+    for hostile in ("../../../../tmp/escape", "/etc/passwd", "..\\..\\win", "a/b/c"):
         key = d.cache_key(hostile)
         assert "/" not in key and ".." not in key, key
         path = (config.AUDIO_DIR / f"{key}.mp3").resolve()
@@ -194,10 +194,10 @@ def test_renaming_the_checkout_does_not_orphan_the_audio():
     if made:
         Path(real.audio_path).write_bytes(b"not really audio")
     try:
-        stale = replace(real, audio_path="/Users/someone/mr-roy/cache/audio/version.mp3")
+        stale = replace(real, audio_path="/Users/someone/old-checkout/cache/audio/version.mp3")
         assert d._relocate(stale).audio_path == real.audio_path, "orphan not recovered"
         # A file that genuinely is not there must stay missing, not be invented.
-        gone = replace(real, audio_path="/Users/someone/mr-roy/cache/audio/nosuch.mp3")
+        gone = replace(real, audio_path="/Users/someone/old-checkout/cache/audio/nosuch.mp3")
         assert d._relocate(gone).audio_path == gone.audio_path, "invented a file"
     finally:
         if made:

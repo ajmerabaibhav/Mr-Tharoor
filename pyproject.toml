@@ -22,10 +22,11 @@ dependencies = [
 dev = ["ruff>=0.5", "pytest>=8"]
 
 [project.urls]
-Homepage = "https://github.com/ajmerabaibhav/Mr-Roy-"
+Homepage = "https://github.com/ajmerabaibhav/Mr-Tharoor"
 
 [project.scripts]
 tharoor = "mr_tharoor.cli:main"
+# `roy` stays as an undocumented alias so older habits and scripts still work.
 roy = "mr_tharoor.cli:main"
 
 [build-system]

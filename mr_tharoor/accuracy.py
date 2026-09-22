@@ -7,8 +7,8 @@ guess. This module is how the guess becomes a number.
 
 The loop is deliberately small enough to actually do:
 
-    roy check          hear your clip, hear the correct word, say yes or no
-    roy score          what those answers add up to
+    tharoor check          hear your clip, hear the correct word, say yes or no
+    tharoor score          what those answers add up to
 
 From that you get the two numbers that matter, and they are different
 questions with different costs:
@@ -22,7 +22,7 @@ questions with different costs:
                 habits. Less annoying, equally useless.
 
 Precision is cheap to measure: label what he flagged. Recall is expensive,
-because it needs you to judge things he said nothing about, so `roy check
+because it needs you to judge things he said nothing about, so `tharoor check
 --audit` samples a handful of unflagged words at random and asks about those.
 A sample gives an estimate with an honest interval rather than a false
 certainty.
@@ -45,7 +45,7 @@ LABELS_FILE = config.DATA_DIR / "labels.json"
 
 # --- the false-alarm floor, measured without asking anyone anything --------
 #
-# `roy check` is honest but expensive: it needs twenty minutes of someone
+# `tharoor check` is honest but expensive: it needs twenty minutes of someone
 # judging their own speech, and until that happens every threshold in
 # evidence.py is a guess. There is one measurement that needs no human at
 # all, and it was sitting in the cache the whole time.

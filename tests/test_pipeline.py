@@ -285,6 +285,7 @@ def test_wispr_snapshot_is_read_only_and_does_not_require_audio(tmp_path, monkey
 
 def test_report_does_not_call_candidates_mistakes():
     rendered = report.build_html([finding()], date.today())
-    assert "0 examples across 0 sound patterns" in rendered
     assert "No pronunciation pattern passed" in rendered
+    assert "not confirmed" in rendered  # the candidate is labelled, not counted
+    assert '<div class="stat-value">0</div>' in rendered  # nothing claimed as confirmed
     assert "1 mistakes" not in rendered

@@ -189,7 +189,7 @@ def write_wav(dictation: Dictation, folder: Path) -> Path | None:
 
 
 def health() -> dict:
-    """For `roy setup` and `roy logs`: is this source usable right now."""
+    """For `tharoor setup` and `tharoor logs`: is this source usable right now."""
     if not DB_PATH.exists():
         return {"available": False, "reason": "Wispr Flow is not installed, or has no history yet"}
     try:

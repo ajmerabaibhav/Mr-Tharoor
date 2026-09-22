@@ -199,7 +199,7 @@ def _process_api_available() -> bool:
 def _is_our_listener(pid: int) -> bool:
     """Is this Mr Tharoor's own daemon, seen from another process?
 
-    `roy gate` runs in its own process, so the listener's recording looked
+    `tharoor gate` runs in its own process, so the listener's recording looked
     like "an app is using the microphone" -- an alarming, nameless holder
     that was actually us. Match on the command line, not the bundle id,
     because a bare python process has none.
@@ -314,7 +314,7 @@ def is_mic_in_use() -> bool:
 
 
 def why_open() -> tuple[bool, str, list[MicUser]]:
-    """The gate's reasoning, for logs and for `roy gate`."""
+    """The gate's reasoning, for logs and for `tharoor gate`."""
     if not has_process_api:
         running = _device_running_somewhere()
         return running, "device-running fallback (cannot exclude our own stream)", []

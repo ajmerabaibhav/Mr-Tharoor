@@ -251,7 +251,7 @@ Uses sounddevice, not AVAudioEngine, and never touches the voice path.
         #
         # It is also the only place feedback is worth anything. The one lever
         # on signal-to-noise is distance, and the person holding the laptop is
-        # the only one who can pull it. TOO_FAR is what `roy logs` counts.
+        # the only one who can pull it. TOO_FAR is what `tharoor logs` counts.
         snr = listen.snr_of(audio, SAMPLE_RATE)
         if snr < listen.MIN_SNR_DB:
             path.unlink(missing_ok=True)
@@ -280,7 +280,7 @@ Uses sounddevice, not AVAudioEngine, and never touches the voice path.
             if used > MAX_SESSION_MB:
                 self.logger.error(
                     f"{used:.0f} MB of audio on disk, over the {MAX_SESSION_MB} MB "
-                    f"ceiling. Not recording. Run `roy analyse-day` or delete "
+                    f"ceiling. Not recording. Run `tharoor analyse-day` or delete "
                     f"{config.DATA_DIR / 'sessions'}."
                 )
                 time.sleep(300)

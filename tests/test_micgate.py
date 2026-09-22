@@ -171,7 +171,7 @@ def main() -> int:
         users = micgate.mic_users()
         if not any(u.pid == holder.pid for u in users):
             # Our helper never got the device, because something else already
-            # has it -- most often the user's own `roy listen` daemon, which
+            # has it -- most often the user's own `tharoor listen` daemon, which
             # is supposed to be running. That is a busy machine, not a broken
             # gate. Skipping is honest; failing would train someone to ignore
             # a red result, and killing the other process is not a test's job.
