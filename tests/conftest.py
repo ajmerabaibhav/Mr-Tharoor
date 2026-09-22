@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mr_tharoor import accuracy, config, log, remind, schedule, streaks, wispr
+from mr_tharoor import accuracy, config, log, remind, schedule, streaks, typed, wispr
 
 
 @pytest.fixture(autouse=True)
@@ -27,6 +27,10 @@ def isolated_data(tmp_path, monkeypatch):
     monkeypatch.setattr(remind, "QUEUE_FILE", tmp_path / "data/reminders.json")
     monkeypatch.setattr(remind, "DELIVERIES_FILE", tmp_path / "data/deliveries.json")
     monkeypatch.setattr(wispr, "DB_PATH", tmp_path / "absent.sqlite")
+    # The typing source reads the real ~/.claude/projects, and the grammar
+    # checker shells out to the real Claude CLI. A test does neither.
+    monkeypatch.setattr(typed, "PROJECTS", tmp_path / "projects")
+    monkeypatch.setenv("MR_THAROOR_NO_LLM", "1")
     monkeypatch.setattr(schedule, "LOG_DIR", tmp_path / "logs")
 
 

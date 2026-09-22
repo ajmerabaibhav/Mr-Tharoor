@@ -543,7 +543,7 @@ def _analyse_day(args: argparse.Namespace) -> int:
     """
     from datetime import date as _date, datetime
 
-    from . import daily, grammar, listener, listen, log, remind, report, schedule, streaks, wispr
+    from . import daily, grammar, listener, listen, log, remind, report, schedule, streaks, typed, wispr
 
     when = _date.fromisoformat(args.day) if args.day else _date.today()
     logger = log.get("nightly")
@@ -561,11 +561,13 @@ def _analyse_day(args: argparse.Namespace) -> int:
     findings = []
     tallies = []
     grammar_findings = []
-    sources = {"wispr": 0, "own": 0}
+    spoken_texts: list[tuple[str, str]] = []  # everything said today, for one grammar pass
+    sources = {"wispr": 0, "own": 0, "typed": 0}
     failures = 0
 
     with log.step("nightly", day=str(when)):
         # ---- source 1: Wispr Flow ----
+        dictations: list = []
         if wispr.available():
             try:
                 dictations = wispr.for_day(when)
@@ -582,7 +584,12 @@ def _analyse_day(args: argparse.Namespace) -> int:
             folder = listener.sessions_dir(when)
             for index, d in enumerate(dictations, 1):
                 label = f"{when}-wispr-{dictionary.cache_key(d.id)}"
-                grammar_findings += grammar.compare(d.heard, d.meant, label, edited=d.edited)
+                # Raw ASR, not the cleaned text: Wispr's model has already
+                # fixed the grammar in `meant`, so marking that finds nothing.
+                if d.heard:
+                    spoken_texts.append((label, d.heard))
+                if d.edited:  # your own hand corrections are the best evidence there is
+                    grammar_findings += grammar.compare(d.heard, d.meant, label, edited=True)
                 path = wispr.write_wav(d, folder)
                 if not path:
                     continue
@@ -617,7 +624,7 @@ def _analyse_day(args: argparse.Namespace) -> int:
                 findings += daily.findings_for_segments(str(chunk), segments, label, tallies=tallies)
                 for n, segment in enumerate(segments):
                     if segment.get("words") and all(w.get("probability", 0) >= 0.80 for w in segment["words"]):
-                        grammar_findings += grammar.check(segment["text"], f"{label}-{n}")
+                        spoken_texts.append((f"{label}-{n}", segment["text"]))
             except Exception as exc:
                 failures += 1
                 logger.error(f"could not analyse {chunk.name}: {type(exc).__name__}: {exc}")
@@ -630,6 +637,26 @@ def _analyse_day(args: argparse.Namespace) -> int:
             logger.error(f"{failures} sources failed; keeping the previous report and retrying later")
             print(f"  {failures} sources failed. Previous report kept; see `roy logs`.")
             return 1
+
+        # ---- source 3: what you typed (Claude Code's own transcripts) ----
+        spoken_now = [text for _, text in spoken_texts]
+        try:
+            typed_texts = typed.for_day(when, exclude=spoken_now + [d.meant for d in dictations])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"typed source unavailable: {type(exc).__name__}: {exc}")
+            typed_texts = []
+        sources["typed"] = len(typed_texts)
+        print(f"  {len(typed_texts)} typed messages for {when}")
+
+        # ---- grammar, over both halves of the day, in as few calls as possible ----
+        if grammar.llm_available():
+            print(f"  checking grammar on {len(spoken_texts)} utterances and {len(typed_texts)} messages")
+            grammar_findings += grammar.llm_check(spoken_texts, "spoken", logger=logger)
+            grammar_findings += grammar.llm_check(typed_texts, "typed", logger=logger)
+        else:
+            logger.warning("Claude Code CLI not found; grammar falls back to local rules")
+            for label, text in spoken_texts:
+                grammar_findings += grammar.check(text, label)
 
         streaks.record_day(when, tallies)
         selected = [f for items in daily.group(findings, when).values() for f in items]
@@ -673,13 +700,25 @@ def _analyse_day(args: argparse.Namespace) -> int:
                     logger.warning(f"could not read grammar history for {raw.name}")
         # Include local reading suggestions too, even when Wispr is present.
         week += grammar_findings
-        grammar_rows = [row for row in grammar.summarise(week, limit=10) if row["times"] >= 2]
+        # Yesterday's mistakes first, then the habits that keep coming back.
+        # Requiring a repeat was why this section was empty every morning: a
+        # correction you make once is still a correction you need to see.
+        today_keys = {(f.kind, f.said, f.should_be) for f in grammar_findings}
+        rows = [row for row in grammar.summarise(week, limit=200)
+                if row["times"] >= 2 or (row["kind"], row["said"], row["should_be"]) in today_keys]
+        rows.sort(key=lambda r: ((r["kind"], r["said"], r["should_be"]) not in today_keys, -r["times"]))
+        # Capped per section, not overall: speech outnumbers typing most days,
+        # and a single global cap silently emptied the typing half of the page.
+        grammar_rows = ([r for r in rows if (r.get("mode") or "spoken") == "spoken"][:10]
+                        + [r for r in rows if r.get("mode") == "typed"][:6])
         config.write_json_atomically(config.REPORTS_DIR / f"{when}-grammar.json", grammar_rows)
         added = remind.enqueue(selected, day=when)
         analysis = {
             "version": daily.ANALYSIS_VERSION, "completed_at": datetime.now().isoformat(),
             "sources": sources, "opportunities": sum(t.said for t in tallies),
             "candidates": len(findings), "shown": len(selected),
+            "grammar_engine": "claude-cli" if grammar.llm_available() else "local-rules",
+            "grammar_found": len(grammar_findings),
         }
         written = report.write(findings, when, grammar=grammar_rows, analysis=analysis)
         analysis["outputs"] = sorted(written)

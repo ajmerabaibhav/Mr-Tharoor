@@ -103,31 +103,57 @@ def _sureness(lower: float) -> str:
     return "worth watching"
 
 
+SECTIONS = (
+    ("spoken", "Grammar &mdash; what you said",
+     "From your dictation and reading audio, checked against the raw transcript. "
+     "Listen to the recording before accepting a correction: a recogniser can mishear."),
+    ("typed", "Grammar &mdash; what you typed",
+     "From what you typed into Claude Code. Pasted text, commands and tool output are excluded."),
+)
+
+
 def _grammar_html(habits: list[dict]) -> str:
+    """Two sections: the mistakes you speak, and the mistakes you type."""
     if not habits:
         return ""
     from . import grammar as _g
 
-    def one(h: dict) -> str:
+    def one(h: dict, spoken: bool) -> str:
         f = _g.GrammarFinding(**{k: v for k, v in h.items() if k != "times"})
         action = html.escape(f.instruction) if f.instruction else ""
+        times = int(h.get("times", 1))
+        repeat = f' &middot; {times}x this month' if times > 1 else ""
         return (
             '<div class="ab"><div class="who">'
-            f'<div class="word">transcript: &ldquo;{html.escape(h["said"])}&rdquo;</div>'
+            f'<div class="word">you {"said" if spoken else "typed"}: &ldquo;{html.escape(h["said"])}&rdquo;</div>'
             + (f'<div class="action">{action}</div>' if action else "")
             + f'<div class="fix">&ldquo;<b>{html.escape(h["should_be"])}</b>&rdquo;'
-            f'<span class="kind">{html.escape(h["kind"])} &middot; {h["times"]}x</span></div>'
+            f'<span class="kind">{html.escape(h["kind"])}{repeat}</span></div>'
             f'<div class="rule">{html.escape(f.rule)}</div>'
-            f'<div class="ctx">&ldquo;{html.escape(h["context"][:120])}&rdquo;</div>'
+            f'<div class="ctx">&ldquo;{html.escape(h["context"][:160])}&rdquo;</div>'
             "</div></div>"
         )
 
-    items = "".join(one(h) for h in habits)
-    return (
-        '<h2 class="sect">Phrasing</h2>'
-        '<div class="sub2">Repeated suggestions from local rules or your own edits. Check the transcript against what you actually said before practising.</div>'
-        f'<div class="card">{items}</div>'
-    )
+    out = []
+    for mode, title, blurb in SECTIONS:
+        rows = [h for h in habits if (h.get("mode") or "spoken") == mode]
+        if not rows:
+            continue
+        items = "".join(one(h, mode == "spoken") for h in rows)
+        out.append(f'<h2 class="sect">{title}</h2><div class="sub2">{blurb}</div>'
+                   f'<div class="card">{items}</div>')
+    return "".join(out)
+
+
+def _provenance(analysis: dict) -> str:
+    """Say in the report itself what left the machine. It is the honest place."""
+    if analysis.get("grammar_engine") != "claude-cli":
+        return ('<div class="tribute">Everything in this report was produced on this machine. '
+                'Grammar came from local rules.</div>')
+    return ('<div class="tribute">Pronunciation was measured on this machine and no audio left it. '
+            "Grammar was checked by the Claude Code CLI already installed here, which means the day's "
+            'transcript text was sent for that one call. Set MR_THAROOR_NO_LLM=1 to use local rules '
+            'instead.</div>')
 
 
 def build_html(findings: list, day: date, grammar: list[dict] | None = None,
@@ -230,12 +256,14 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
     quality = (sum(quality_values) / len(quality_values)) if quality_values else None
     quality_value = f"{quality:.0%}" if quality is not None else "&mdash;"
     quality_note = "average signal quality" if quality is not None else "no qualifying examples"
+    spoken_rows = sum(1 for row in (grammar or []) if (row.get("mode") or "spoken") == "spoken")
+    typed_rows = sum(1 for row in (grammar or []) if row.get("mode") == "typed")
     stats = (
         '<div class="stats">'
         f'<div class="stat"><div class="stat-label">SOUNDS TO FIX</div><div class="stat-value">{len(grouped)}</div>'
         '<div class="stat-note">confirmed patterns</div></div>'
-        f'<div class="stat"><div class="stat-label">MISTAKES FOUND</div><div class="stat-value">{total}</div>'
-        '<div class="stat-note">across reviewed examples</div></div>'
+        f'<div class="stat"><div class="stat-label">GRAMMAR TO FIX</div><div class="stat-value">{len(grammar or [])}</div>'
+        f'<div class="stat-note">{spoken_rows} said &middot; {typed_rows} typed</div></div>'
         f'<div class="stat"><div class="stat-label">CLIPS TO HEAR</div><div class="stat-value">{clips}</div>'
         '<div class="stat-note">voice clips available</div></div>'
         f'<div class="stat"><div class="stat-label">EVIDENCE QUALITY</div><div class="stat-value">{quality_value}</div>'
@@ -256,9 +284,10 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
         summary = (
             '<div class="card"><div class="card-head">'
             '<strong>Processing summary</strong><div class="words">'
-            f'{wispr_count} Wispr recording{"s" if wispr_count != 1 else ""} and '
-            f'{own_count} reading recording{"s" if own_count != 1 else ""} analysed; '
-            f'{int(analysis.get("opportunities", 0))} sound opportunities checked. '
+            f'{wispr_count} Wispr recording{"s" if wispr_count != 1 else ""}, '
+            f'{own_count} reading recording{"s" if own_count != 1 else ""} and '
+            f'{int(sources.get("typed", 0))} typed message{"s" if int(sources.get("typed", 0)) != 1 else ""} '
+            f'read; {int(analysis.get("opportunities", 0))} sound opportunities checked. '
             f'{candidate_count} tentative candidate{"s" if candidate_count != 1 else ""}; '
             f'{total} examples passed the evidence checks.</div>'
             f'<div class="words">Generated {html.escape(generated)}'
@@ -279,12 +308,13 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
         .replace("{{CANDIDATES}}", candidate_html)
         .replace("{{SUMMARY}}", summary)
         .replace("{{GRAMMAR}}", _grammar_html(grammar or []) or (
-            '<h2 class="sect">Phrasing</h2>'
+            '<h2 class="sect">Grammar</h2>'
             '<div class="card"><div class="card-head"><div class="words">'
-            'No repeatable grammar pattern was found in this report. '
-            'The transcript was still checked and will be compared with future days.'
+            'Nothing was marked in what you said or typed today. '
+            'Either the day was clean or there was too little of it to read.'
             '</div></div></div>'
         ))
+        .replace("{{PROVENANCE}}", _provenance(analysis or {}))
         .replace("{{REMARK}}", html.escape(remark))
     )
 
@@ -475,6 +505,7 @@ font:inherit;font-size:.8rem;cursor:pointer;color:var(--ink2)}
 {{CARDS}}
 {{CANDIDATES}}
 {{GRAMMAR}}
+{{PROVENANCE}}
 <div class="tribute">Mr Tharoor is a fictional mascot, named in tribute to Dr Shashi Tharoor.
 This software is not affiliated with, endorsed by, or connected to him. Every word it speaks
 was written for this program.</div>
