@@ -28,18 +28,28 @@ from . import config
 WINDOW = 7
 
 
+SCHEMA = 2  # the analysis layout these numbers assume
+
+
 def _analysed_days(days: list[date]) -> list[date]:
-    """Days whose grammar came from the current checker. Nothing else compares."""
+    """Days whose grammar came from the current checker. Nothing else compares.
+
+    The engine name is not enough on its own: a day written by an older layout
+    under the same engine would be pooled in as though it were comparable, which
+    is the exact mistake this module exists to avoid.
+    """
     out = []
     for day in days:
         marker = config.REPORTS_DIR / f"{day}-analysis.json"
         if not marker.exists():
             continue
         try:
-            if json.loads(marker.read_text()).get("grammar_engine") == "claude-cli":
-                out.append(day)
+            written = json.loads(marker.read_text())
         except (ValueError, TypeError):
             continue
+        if (written.get("grammar_engine") == "claude-cli"
+                and int(written.get("version", 0)) >= SCHEMA):
+            out.append(day)
     return out
 
 
@@ -126,6 +136,10 @@ def week(today: date | None = None) -> dict | None:
     gap = before["rate"] - now["rate"]
     out["change"] = (gap / before["rate"] * 100) if before["rate"] else None
     if abs(gap) < noise:
+        # The percentage goes with the verdict. Leaving it set here is how a
+        # caller ends up printing "29% fewer" under a sentence that says
+        # nothing was proved, which is worse than saying nothing at all.
+        out["change"] = None
         out["verdict"] = (
             f"{now['rate']:.1f} corrections per thousand words this week against "
             f"{before['rate']:.1f} last week. On {now['words']:,} words that difference is "
@@ -140,8 +154,9 @@ def week(today: date | None = None) -> dict | None:
     else:
         out["verdict"] = (
             f"{now['rate']:.1f} corrections per thousand words this week against "
-            f"{before['rate']:.1f} last week: more, not fewer. Worth reading the list below "
-            "rather than explaining it away."
+            f"{before['rate']:.1f} last week: {abs(out['change'] or 0):.0f}% more, not fewer, "
+            "and past what chance explains. Worth reading the list below rather than "
+            "explaining it away."
         )
     now_labels = _labels([row for day in recent for row in _findings(day)])
     was_labels = _labels([row for day in earlier for row in _findings(day)])

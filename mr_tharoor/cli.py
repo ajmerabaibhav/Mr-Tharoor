@@ -649,14 +649,19 @@ def _analyse_day(args: argparse.Namespace) -> int:
         print(f"  {len(typed_texts)} typed messages for {when}")
 
         # ---- grammar, over both halves of the day, in as few calls as possible ----
+        # The local rules run either way. They are few, but they are certain,
+        # and a measured probe showed the model skipping one of them on every
+        # run -- a rule never has an off night.
+        rules = [f for label, text in spoken_texts for f in grammar.check(text, label, "spoken")]
+        rules += [f for label, text in typed_texts for f in grammar.check(text, label, "typed")]
         if grammar.llm_available():
             print(f"  checking grammar on {len(spoken_texts)} utterances and {len(typed_texts)} messages")
-            grammar_findings += grammar.llm_check(spoken_texts, "spoken", logger=logger)
-            grammar_findings += grammar.llm_check(typed_texts, "typed", logger=logger)
+            found = grammar.llm_check(spoken_texts, "spoken", logger=logger)
+            found += grammar.llm_check(typed_texts, "typed", logger=logger)
+            grammar_findings += grammar.merge(found, rules)
         else:
             logger.warning("Claude Code CLI not found; grammar falls back to local rules")
-            for label, text in spoken_texts:
-                grammar_findings += grammar.check(text, label)
+            grammar_findings += rules
 
         streaks.record_day(when, tallies)
         selected = [f for items in daily.group(findings, when).values() for f in items]

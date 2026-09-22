@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 PROJECTS = Path.home() / ".claude" / "projects"
@@ -41,6 +41,18 @@ MAX_CHARS = 1200  # longer than this and it was pasted, not typed
 # Rows Claude Code writes as if the user had typed them.
 NOT_TYPED = ("[Request interrupted", "Caveat:", "This session is being continued",
              "API Error", "[Image #")
+
+
+def _plain(text: str) -> str:
+    """Letters and spaces only, for comparing what was said with what was typed.
+
+    Wispr punctuates; fingers in a terminal do not. Comparing the two with
+    punctuation left in meant "I don\'t know what he\'s doing." and "i dont know
+    what hes doing" were different sentences, and the same mistake was counted
+    once as speech and once as typing -- which is how one slip is dressed up as
+    a habit.
+    """
+    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", text.lower()).split())
 
 
 def _text(row: dict) -> str:
@@ -72,14 +84,15 @@ def for_day(day: date, exclude: list[str] | None = None) -> list[tuple[str, str]
     `exclude` is the day's dictations: text that was spoken into a text box is
     not typing, and counting it twice would make one mistake look like a habit.
     """
-    spoken = [" ".join(t.lower().split()) for t in (exclude or []) if t]
+    spoken = [_plain(t) for t in (exclude or []) if t]
     out: list[tuple[str, str]] = []
     seen: set[str] = set()
     for transcript in sorted(PROJECTS.glob("*/*.jsonl")):
         if "mr-tharoor" in transcript.parent.name or "mr_tharoor" in transcript.parent.name:
             continue
-        if datetime.fromtimestamp(transcript.stat().st_mtime).date() < day:
-            continue  # nothing written on or after the day in question
+        if datetime.fromtimestamp(transcript.stat().st_mtime).date() < day - timedelta(days=1):
+            continue  # nothing written on or after the day in question, with a
+            # day of slack: a row's timezone can put it after its file's mtime
         try:
             lines = transcript.read_text(errors="replace").splitlines()
         except OSError:
@@ -97,7 +110,7 @@ def for_day(day: date, exclude: list[str] | None = None) -> list[tuple[str, str]
             text = _text(row)
             if not text or len(text) > MAX_CHARS or len(text.split()) < MIN_WORDS:
                 continue
-            key = " ".join(text.lower().split())
+            key = _plain(text)
             if key in seen or any(key in utterance or utterance in key for utterance in spoken):
                 continue
             seen.add(key)

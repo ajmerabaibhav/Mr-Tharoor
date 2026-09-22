@@ -123,3 +123,83 @@ def test_week_refuses_to_invent_progress(tmp_path, monkeypatch):
     assert summary["last_week"]["days"] == 0  # the local-rules day is not comparable
     assert "Next week can be compared" in summary["verdict"]
     assert summary["change"] is None
+
+
+def _seed(day, engine="claude-cli", version=2, found=0, label="agreement"):
+    import json as _json
+
+    from mr_tharoor import config
+
+    (config.REPORTS_DIR / f"{day}-analysis.json").write_text(
+        _json.dumps({"grammar_engine": engine, "version": version}))
+    (config.REPORTS_DIR / f"{day}-grammar-raw.json").write_text(
+        _json.dumps([{"label": label}] * found))
+
+
+def test_a_percentage_never_survives_a_verdict_of_no_difference(monkeypatch):
+    """The number and the sentence must agree, or the sentence is worthless."""
+    from datetime import date, timedelta
+
+    from mr_tharoor import progress
+
+    today = date(2026, 10, 20)
+    for back in range(1, 15):
+        _seed(today - timedelta(days=back), found=3 if back <= 7 else 2)
+    monkeypatch.setattr(progress, "_word_counts", lambda days: {d: 430 for d in days})
+
+    summary = progress.week(today)
+    assert "nothing has been proved" in summary["verdict"]
+    assert summary["change"] is None  # 21 against 14 is noise at this volume
+
+
+def test_an_older_analysis_layout_is_not_pooled_in(monkeypatch):
+    from datetime import date, timedelta
+
+    from mr_tharoor import progress
+
+    today = date(2026, 10, 20)
+    for back in range(1, 8):
+        _seed(today - timedelta(days=back), version=1, found=9)  # same engine, older layout
+    monkeypatch.setattr(progress, "_word_counts", lambda days: {d: 430 for d in days})
+    assert progress.week(today) is None
+
+
+def test_the_footer_does_not_claim_corrections_with_no_words(monkeypatch):
+    from datetime import date, timedelta
+
+    from mr_tharoor import progress, report
+
+    today = date(2026, 10, 20)
+    for back in range(1, 8):
+        _seed(today - timedelta(days=back), found=1)
+    monkeypatch.setattr(progress, "_word_counts", lambda days: {d: 0 for d in days})
+    rendered = report._week_html(today)
+    assert "Not enough material" in rendered
+    assert "corrections across" not in rendered
+
+
+def test_the_certain_rules_run_beside_the_model_without_repeating_it():
+    """A rule never has an off night, but it must not say what was already said."""
+    from mr_tharoor.grammar import GrammarFinding
+
+    llm = [GrammarFinding("phrase", "revert back to me", "reply to me", "ctx", "u1",
+                          basis="llm", mode="spoken")]
+    rules = [
+        GrammarFinding("phrase", "revert back", "reply", "ctx", "u1", basis="rule"),   # same span
+        GrammarFinding("phrase", "am having a doubt", "have a doubt", "ctx", "u2",
+                       basis="rule"),                                                   # new
+    ]
+    merged = grammar.merge(llm, rules)
+    assert [f.said for f in merged] == ["revert back to me", "am having a doubt"]
+
+
+def test_indian_english_vocabulary_is_not_marked_as_a_mistake():
+    """Grammar is corrected. A regional word is not a mistake, and saying it is
+    loses the reader in one morning."""
+    for fine in ("Please prepone the meeting to Tuesday",
+                 "Kindly do the needful before Friday",
+                 "I have a doubt about the pricing"):
+        assert grammar.check(fine, "x") == [], fine
+    # but the stative verb in the continuous is grammar, and is caught
+    caught = grammar.check("I am having a doubt about the pricing", "x")
+    assert [(f.said, f.should_be) for f in caught] == [("am having a doubt", "have a doubt")]

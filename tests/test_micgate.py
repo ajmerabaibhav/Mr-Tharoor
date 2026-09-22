@@ -63,7 +63,13 @@ def test_bluetooth_fallback():
 
     real_output = micgate.audio_output_apps
     real_bt = micgate.input_is_bluetooth
+    real_users = micgate.mic_users
     try:
+        # Stub the real device enumeration too. Without this the last assertion
+        # below asks the live machine who owns the microphone, and fails
+        # whenever `tharoor listen` happens to be holding it -- a test that
+        # depends on what else is running is a test nobody believes.
+        micgate.mic_users = lambda: []
         # A conversation app making sound on a Bluetooth mic means a call.
         micgate.input_is_bluetooth = lambda: True
         micgate.audio_output_apps = lambda exclude_self=True: [
@@ -88,6 +94,7 @@ def test_bluetooth_fallback():
     finally:
         micgate.audio_output_apps = real_output
         micgate.input_is_bluetooth = real_bt
+        micgate.mic_users = real_users
     print("bluetooth fallback          ok")
 
 

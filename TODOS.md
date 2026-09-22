@@ -1,5 +1,48 @@
 # What is not built, and what is known broken
 
+## Three simulations against future data — 23 September 2026
+
+Three isolated runs (own `MR_THAROOR_HOME`, the real data untouched) played
+invented future days against the tool and checked what it said.
+
+**What held.** The transcript-matching guard in `parse_llm` survived every
+attack: spans not in the text, out-of-range and non-integer indices,
+`said == should_be`, duplicates, fenced and prose-wrapped replies. Zero
+findings of the only kind that really matters — a mistake shown to the user
+that he never made. HTML escaping held everywhere transcript or model text
+reaches the page. On 16 planted errors mixed with correct and mis-transcribed
+sentences: **10/10 recall, 0 false alarms, 0 mis-transcriptions marked**, on
+both Haiku and Sonnet, twice each. The weekly arithmetic refused every trap:
+same rate from a bigger week is not improvement, a week of the old engine is
+not zero corrections, and a fourfold rate gap on 50 words is still noise.
+
+**Fixed as a result.**
+
+| What | Where |
+|---|---|
+| A "nothing was proved" verdict still carried a percentage in the returned dict — a landmine for any caller that prints it | `progress.py` |
+| `_analysed_days` trusted the engine name without checking the schema version | `progress.py` |
+| The week footer claimed corrections under a verdict saying there was no material | `report.py` |
+| One malformed grammar row raised through `build_html` and cost the whole night: no HTML, therefore no PDF | `report.py` |
+| An unknown `mode` was counted in the total but rendered nowhere: 3 corrections, "1 said, 1 typed", 2 cards | `report.py` |
+| The typed/spoken dedupe compared punctuated against unpunctuated text, so the same sentence dictated and typed counted twice | `typed.py` |
+| A reply with two objects on one line, or wrapped in an array, parsed to nothing **and logged nothing** | `grammar.py` |
+| `said`/`should_be` had no length cap, unlike `context` | `report.py` |
+| One unescaped interpolation (not reachable, but inconsistent) | `report.py` |
+| A mic test asked the live machine who owned the microphone and failed whenever the listener held it | `tests/test_micgate.py` |
+
+**Open, and honest about it.**
+
+- **Recall is not perfectly stable.** On a 25-item run one agent saw 13/15 and
+  then 15/15 on identical input, missing "four email thread" once. My own
+  16-item runs were 10/10 four times. The difference between the two is batch
+  size, which is the next thing to settle.
+- **`article` labels two different moves** — add "a", and drop "the" before a
+  proper noun. One word for two actions weakens the point of the word.
+- A day's typing is lost entirely if a message exceeds `MAX_CHARS` with an
+  untagged paste in it. The typed words inside it go with it.
+
+
 ## Teaching, not reporting — 22 September 2026
 
 - `label`: the checker returns one lowercase word naming the rule, verified the

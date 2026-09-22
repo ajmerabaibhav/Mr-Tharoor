@@ -57,6 +57,16 @@ KNOWN_PHRASES = {
     "discuss about": "discuss",
     "one of my friend": "one of my friends",
     "cope up with": "cope with",
+    # MEASURED: the checker caught "revert back" and "discussed about" but
+    # skipped "am having a doubt" on all four runs of a 20-error probe. A rule
+    # costs nothing and never has an off night, so the certain ones live here.
+    #
+    # The line these stop at matters. "am having" for "have" is a stative verb
+    # in the continuous, which is grammar. "doubt" for "question", "prepone",
+    # "do the needful" are Indian English vocabulary, which is not a mistake,
+    # and a tool that marks them is not teaching, it is sneering.
+    "am having a doubt": "have a doubt",
+    "revert back": "reply",
 }
 
 _WORD = re.compile(r"[a-z']+")
@@ -198,7 +208,7 @@ def _phrase_window(words: list[str], start: int, end: int, pad: int = CONTEXT) -
     return " ".join(words[lo:hi])
 
 
-def check(text: str, source: str = "") -> list[GrammarFinding]:
+def check(text: str, source: str = "", mode: str = "spoken") -> list[GrammarFinding]:
     """Small explicit grammar rules on the raw transcript, with no LLM rewrite."""
     words = _words(text)
     normalized = " ".join(words)
@@ -215,8 +225,9 @@ def check(text: str, source: str = "") -> list[GrammarFinding]:
             said = match.group()
             fixed = match.expand(replacement)
             change, word = _describe(_words(said), _words(fixed))
-            out.append(GrammarFinding(kind, said, fixed, text.strip()[:160], source,
-                                      change=change, word=word, basis="rule"))
+            out.append(GrammarFinding(kind, said, fixed, _around(text, said), source,
+                                      change=change, word=word, basis="rule",
+                                      label=kind, mode=mode))
     return out
 
 
@@ -408,6 +419,30 @@ def _environment() -> dict:
     return env
 
 
+def _objects(reply: str):
+    """Every JSON object in the reply, however it chose to lay them out.
+
+    One object per line is what the prompt asks for, but a reply that puts two
+    on one line, or wraps them in an array, used to parse to nothing at all --
+    silently, because the line still began with a brace. A scanner does not
+    care about the layout.
+    """
+    decoder = json.JSONDecoder()
+    at = 0
+    while True:
+        start = reply.find("{", at)
+        if start < 0:
+            return
+        try:
+            row, end = decoder.raw_decode(reply, start)
+        except ValueError:
+            at = start + 1
+            continue
+        at = end
+        if isinstance(row, dict):
+            yield row
+
+
 def _around(text: str, said: str, width: int = 150) -> str:
     """The sentence around the mistake. The first 150 characters of a two
     minute dictation are usually nowhere near it, which teaches nothing."""
@@ -427,14 +462,7 @@ def parse_llm(reply: str, items: list[tuple[str, str]], mode: str = "spoken") ->
     """Believe a correction only when the span it quotes is really in the text."""
     out: list[GrammarFinding] = []
     seen: set[tuple] = set()
-    for line in reply.splitlines():
-        line = line.strip().strip("`")
-        if not line.startswith("{"):
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    for row in _objects(reply):
         try:
             index = int(row["i"]) - 1
             said, should_be = str(row["said"]).strip(), str(row["should_be"]).strip()
@@ -464,6 +492,19 @@ def parse_llm(reply: str, items: list[tuple[str, str]], mode: str = "spoken") ->
     return out
 
 
+def merge(llm: list[GrammarFinding], rules: list[GrammarFinding]) -> list[GrammarFinding]:
+    """Rule findings the model did not already make, so nothing is said twice."""
+    covered = {(f.source, _normalised(f.said)) for f in llm}
+    extra = []
+    for f in rules:
+        spans = _normalised(f.said)
+        if any(source == f.source and (spans in said or said in spans)
+               for source, said in covered):
+            continue
+        extra.append(f)
+    return llm + extra
+
+
 def llm_check(items: list[tuple[str, str]], mode: str = "spoken", *, logger=None) -> list[GrammarFinding]:
     """Grammar over a day's utterances. `items` is [(source label, text), ...]."""
     items = [(source, text) for source, text in items if len(_words(text)) >= 4]
@@ -486,9 +527,13 @@ def llm_check(items: list[tuple[str, str]], mode: str = "spoken", *, logger=None
                 logger.warning(f"grammar check failed ({mode}): {type(exc).__name__}: {exc}")
             break
         found = parse_llm(reply, batch, mode)
-        if not found and "{" not in reply and logger:
+        if not found and reply.strip() and logger:
             # An empty reply is normal; an empty reply that is not JSON at all
             # is the CLI telling us something, usually that it is logged out.
-            logger.warning(f"grammar checker said: {reply.strip()[:120] or '(nothing)'}")
+            # A reply that produced nothing is either a clean day or a format
+            # change that has quietly switched the grammar half off. Either way
+            # it goes in the log, because the second one is invisible otherwise.
+            logger.warning(f"grammar checker returned no usable correction; it said: "
+                           f"{reply.strip()[:160]}")
         out += found
     return out

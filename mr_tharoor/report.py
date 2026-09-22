@@ -73,24 +73,27 @@ def _as_heard(word: str, contrast: str) -> str | None:
 # self-contained file that works offline and prints in ink. He is a fictional
 # professor -- round spectacles, swept hair, a band collar -- and deliberately
 # not a likeness of any living person. See the tribute note at the foot.
-PORTRAIT = """<svg class="portrait" viewBox="0 0 104 124" role="img" aria-label="Mr Tharoor">
+PORTRAIT = """<svg class="portrait" viewBox="0 0 108 136" role="img" aria-label="Mr Tharoor">
 <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-<path d="M7 122c2-18 13-27 27-31l18-4 18 4c14 4 25 13 27 31" />
-<path d="M44 76v13M60 76v13" />
-<path d="M44 89l-4 33M60 89l4 33" />
-<path d="M40 96h24" />
-<ellipse cx="52" cy="50" rx="21" ry="25" />
-<path d="M31 45c1-19 9-27 21-27s20 8 21 27c-2-12-9-18-21-18s-19 6-21 18z" fill="currentColor" stroke="none" />
-<path d="M31 42c-2-1-4 1-4 4M73 42c2-1 4 1 4 4" />
-<path d="M31 50c-3 0-5 3-4 6s3 5 6 4M73 50c3 0 5 3 4 6s-3 5-6 4" />
-<circle cx="42" cy="52" r="8.5" /><circle cx="62" cy="52" r="8.5" />
-<path d="M50.5 52h3M33.5 50l-3-2M70.5 50l3-2" />
-<path d="M37 40c3-2 7-2 9 1M58 41c2-3 6-3 9-1" />
-<path d="M42 66c4-3 7-1 10-1s6-2 10 1c-4 4-16 4-20 0z" fill="currentColor" stroke="none" />
-<path d="M47 73c3 2 7 2 10 0" />
-</g>
-<circle cx="42" cy="52" r="1.8" fill="currentColor" /><circle cx="62" cy="52" r="1.8" fill="currentColor" />
-</svg>"""
+<path d="M11 136c3-26 15-37 30-41l7-14h14l7 14c15 4 27 15 30 41" />
+<path d="M46 81c5 7 17 7 22 0" />
+<path d="M45 84l3 12M67 84l-3 12" />
+<path d="M49 92l6 12 6-12" />
+<path d="M48 96l-4 40M64 96l4 40" />
+<circle cx="56" cy="112" r="1.6" fill="currentColor" /><circle cx="56" cy="124" r="1.6" fill="currentColor" />
+<path d="M70 101l5-4 5 3-4 3z" />
+<ellipse cx="54" cy="46" rx="21" ry="24" />
+<path d="M33 44c-2-21 9-31 21-31s23 10 21 31c-2-13-9-20-21-20s-19 7-21 20z" fill="currentColor" stroke="none" />
+<path d="M38 30c5-4 12-6 19-5M71 36c3 3 4 8 3 12" stroke="var(--paper)" stroke-width="1.8" />
+<path d="M33 46c-3 0-5 3-4 6s3 5 6 4M75 46c3 0 5 3 4 6s-3 5-6 4" />
+<circle cx="45" cy="48" r="8.5" /><circle cx="63" cy="48" r="8.5" />
+<path d="M53.5 48h1M36.5 46l-3-2M71.5 46l3-2" />
+<path d="M39 36c3-2 7-2 9 1M60 37c2-3 6-3 9-1" />
+<path d="M54 48c0 5-1 7-3 9 2 1 4 1 6 0" />
+<path d="M44 62c5 6 15 6 20 0" stroke-width="2.4" />
+<path d="M41 58c-1 4 0 6 2 8M67 58c1 4 0 6-2 8" />
+<circle cx="45" cy="48" r="1.7" fill="currentColor" /><circle cx="63" cy="48" r="1.7" fill="currentColor" />
+</g></svg>"""
 
 
 CONTRAST_NAMES = {
@@ -159,8 +162,13 @@ def _grammar_html(habits: list[dict], name: str = "") -> str:
         return ""
     from . import grammar as _g
 
-    def one(h: dict, spoken: bool, number: int) -> str:
-        f = _g.GrammarFinding(**{k: v for k, v in h.items() if k != "times"})
+    def one(h: dict, spoken: bool, number: int) -> str | None:
+        try:
+            f = _g.GrammarFinding(**{k: v for k, v in h.items() if k != "times"})
+        except TypeError:
+            # One partial row used to raise straight through build_html, so a
+            # single bad record cost the whole night: no HTML, therefore no PDF.
+            return None
         action = html.escape(f.instruction) if f.instruction else ""
         times = int(h.get("times", 1))
         # The one word he should be able to say back when asked why it is wrong.
@@ -172,16 +180,16 @@ def _grammar_html(habits: list[dict], name: str = "") -> str:
             f'<div class="item"><div class="num">{number}</div><div class="body">'
             f'<div class="tagline"><span class="label">{label}</span>{tag}</div>'
             f'<div class="said">You {"said" if spoken else "wrote"} '
-            f'&ldquo;<b>{html.escape(h["said"])}</b>&rdquo;</div>'
-            f'<div class="say">Say &ldquo;<b>{html.escape(h["should_be"])}</b>&rdquo;'
+            f'&ldquo;<b>{html.escape(h["said"][:120])}</b>&rdquo;</div>'
+            f'<div class="say">Say &ldquo;<b>{html.escape(h["should_be"][:120])}</b>&rdquo;'
             + (f'<span class="action">{action}</span>' if action else "")
             + f'</div><div class="why">{html.escape(f.rule)}</div>'
             f'<div class="ctx">&ldquo;{html.escape(h["context"][:190])}&rdquo;</div>'
             "</div></div>"
         )
 
-    spoken_rows = [h for h in habits if (h.get("mode") or "spoken") == "spoken"]
     typed_rows = [h for h in habits if h.get("mode") == "typed"]
+    spoken_rows = [h for h in habits if h.get("mode") != "typed"]  # unknown modes are speech
     lead = (f'<h2 class="sect">Your lesson</h2><div class="sub2">'
             f'{html.escape(name) + ", t" if name else "T"}here '
             f'{"is one correction" if len(habits) == 1 else f"are {len(habits)} corrections"} below: '
@@ -201,8 +209,13 @@ def _grammar_html(habits: list[dict], name: str = "") -> str:
             continue
         items = []
         for h in rows:
+            card = one(h, title == "What you said", number + 1)
+            if card is None:
+                continue
             number += 1
-            items.append(one(h, title == "What you said", number))
+            items.append(card)
+        if not items:
+            continue
         out.append(f'<h3 class="sect">{title}</h3><div class="sub2">{blurb}</div>'
                    f'<div class="lesson">{"".join(items)}</div>')
     return "".join(out)
@@ -231,9 +244,12 @@ def _week_html(day: date) -> str:
         '<div class="week"><div class="week-head">Seven days</div>'
         f'<div class="week-body">{html.escape(summary["verdict"])}</div>'
         f'{note}'
-        f'<div class="week-foot">{now["found"]} corrections across {now["days"]} '
-        f'analysed day{"s" if now["days"] != 1 else ""}, {now["words"]:,} words of your own. '
-        'Only days this checker read are counted.</div></div>'
+        # Without the word count the footer reads as a contradiction under the
+        # "not enough material" verdict: no material, five corrections.
+        + (f'<div class="week-foot">{now["found"]} corrections across {now["days"]} '
+           f'analysed day{"s" if now["days"] != 1 else ""}, {now["words"]:,} words of your own. '
+           'Only days this checker read are counted.</div>' if now["words"] else "")
+        + '</div>'
     )
 
 
@@ -286,7 +302,7 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
         )
         rows.append(
             f'<div class="card"><div class="card-head"><div class="swap">'
-            f'<span class="sound-name">{CONTRAST_NAMES.get(contrast, contrast)}</span>'
+            f'<span class="sound-name">{html.escape(CONTRAST_NAMES.get(contrast, contrast))}</span>'
             f'<span class="arrow">/{html.escape(first.said)}/ where the word wants '
             f'/{html.escape(first.should_be)}/</span>'
             f'<span class="n">{len(items)}x &middot; {_sureness(bounds.get(contrast, 0.0))}</span></div>'
@@ -367,8 +383,8 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
     quality = (sum(quality_values) / len(quality_values)) if quality_values else None
     quality_value = f"{quality:.0%}" if quality is not None else "&mdash;"
     quality_note = "average signal quality" if quality is not None else "no qualifying examples"
-    spoken_rows = sum(1 for row in (grammar or []) if (row.get("mode") or "spoken") == "spoken")
     typed_rows = sum(1 for row in (grammar or []) if row.get("mode") == "typed")
+    spoken_rows = len(grammar or []) - typed_rows
     stats = (
         '<div class="stats">'
         f'<div class="stat"><div class="stat-label">SOUNDS TO FIX</div><div class="stat-value">{len(grouped)}</div>'

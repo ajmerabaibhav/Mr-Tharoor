@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="252" viewBox="0 0 108 136" role="img" aria-label="Mr Tharoor">
+<g fill="none" stroke="#1A1A17" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<path d="M11 136c3-26 15-37 30-41l7-14h14l7 14c15 4 27 15 30 41" />
+<path d="M46 81c5 7 17 7 22 0" />
+<path d="M45 84l3 12M67 84l-3 12" />
+<path d="M49 92l6 12 6-12" />
+<path d="M48 96l-4 40M64 96l4 40" />
+<circle cx="56" cy="112" r="1.6" fill="#1A1A17" /><circle cx="56" cy="124" r="1.6" fill="#1A1A17" />
+<path d="M70 101l5-4 5 3-4 3z" />
+<ellipse cx="54" cy="46" rx="21" ry="24" />
+<path d="M33 44c-2-21 9-31 21-31s23 10 21 31c-2-13-9-20-21-20s-19 7-21 20z" fill="#1A1A17" stroke="none" />
+<path d="M38 30c5-4 12-6 19-5M71 36c3 3 4 8 3 12" stroke="#FBFAF6" stroke-width="1.8" />
+<path d="M33 46c-3 0-5 3-4 6s3 5 6 4M75 46c3 0 5 3 4 6s-3 5-6 4" />
+<circle cx="45" cy="48" r="8.5" /><circle cx="63" cy="48" r="8.5" />
+<path d="M53.5 48h1M36.5 46l-3-2M71.5 46l3-2" />
+<path d="M39 36c3-2 7-2 9 1M60 37c2-3 6-3 9-1" />
+<path d="M54 48c0 5-1 7-3 9 2 1 4 1 6 0" />
+<path d="M44 62c5 6 15 6 20 0" stroke-width="2.4" />
+<path d="M41 58c-1 4 0 6 2 8M67 58c1 4 0 6-2 8" />
+<circle cx="45" cy="48" r="1.7" fill="#1A1A17" /><circle cx="63" cy="48" r="1.7" fill="#1A1A17" />
+</g></svg>
