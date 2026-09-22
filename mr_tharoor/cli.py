@@ -1,21 +1,21 @@
 """Mr Tharoor, your pronunciation teacher.
 
-    roy drill version three       say it after him, three times each
-    roy say version               hear it once
-    roy look comfortable          IPA and source, no sound
-    roy check                     judge his flags, so we learn if he is right
-    roy score                     how accurate he has actually been
-    roy setup                     one command: check, permit, download, schedule
-    roy listen                    start listening (context-aware, all day)
-    roy analyse-day               the 23:30 job: score today, build the report
-    roy morning                   the 08:30 job: open it, send reminders
-    roy probe                     record the 20 sentences that test if he works
-    roy analyse                   score those recordings, see if he can hear you
-    roy mictest                   compare microphones, find your best setup
-    roy install                   run every day by itself (launchd)
-    roy remind                    what Mr Tharoor would nudge you about
-    roy gate                      is the mic gate working on this Mac
-    roy cache                     what is already offline
+    tharoor drill version three       say it after him, three times each
+    tharoor say version               hear it once
+    tharoor look comfortable          IPA and source, no sound
+    tharoor check                     judge his flags, so we learn if he is right
+    tharoor score                     how accurate he has actually been
+    tharoor setup                     one command: check, permit, download, schedule
+    tharoor listen                    start listening (context-aware, all day)
+    tharoor analyse-day               the 23:30 job: score today, build the report
+    tharoor morning                   the 08:30 job: open it, send reminders
+    tharoor probe                     record the 20 sentences that test if he works
+    tharoor analyse                   score those recordings, see if he can hear you
+    tharoor mictest                   compare microphones, find your best setup
+    tharoor install                   run every day by itself (launchd)
+    tharoor remind                    what Mr Tharoor would nudge you about
+    tharoor gate                      is the mic gate working on this Mac
+    tharoor cache                     what is already offline
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def cmd_drill(args: argparse.Namespace) -> int:
         words = [w for row in rows for w in row.words[:2]][:4]
         if not words:
             print("Nothing to drill yet. Mr Tharoor has not heard you speak.")
-            print("Give him words directly:  roy drill version three")
+            print("Give him words directly:  tharoor drill version three")
             return 0
         print("Tonight's worst, from your own speech:\n")
 
@@ -164,7 +164,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         habits = json.loads(grammar_path.read_text()) if grammar_path.exists() else []
         report.write(findings, day, grammar=habits)
 
-    print(f"\n  {saved} judgements saved. Run `roy score` to see what they say.")
+    print(f"\n  {saved} judgements saved. Run `tharoor score` to see what they say.")
     return 0
 
 
@@ -199,7 +199,7 @@ def cmd_score(args: argparse.Namespace) -> int:
         print(f"\n  Suggested REPORT_THRESHOLD: {threshold:.2f}")
         print(f"    {why}")
     elif card.flagged < 20:
-        print(f"\n  Judge {20 - card.flagged} more with `roy check` for a threshold suggestion.")
+        print(f"\n  Judge {20 - card.flagged} more with `tharoor check` for a threshold suggestion.")
     return 0
 
 
@@ -255,7 +255,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
         try:
             input("         ENTER to record, ENTER again to stop  ")
         except (EOFError, KeyboardInterrupt):
-            print("\n  stopped. Progress is saved; run `roy probe` again to continue.")
+            print("\n  stopped. Progress is saved; run `tharoor probe` again to continue.")
             return 0
         try:
             path = probe.record_one(sentence, seconds=args.seconds, device=device)
@@ -279,7 +279,7 @@ def cmd_analyse(args: argparse.Namespace) -> int:
 
     numbers = probe.recorded()
     if not numbers:
-        print("No recordings yet. Run `roy probe` first.")
+        print("No recordings yet. Run `tharoor probe` first.")
         return 1
 
     print(f"Scoring {len(numbers)} recordings. First run loads a 1.2GB model.\n")
@@ -310,7 +310,7 @@ def cmd_analyse(args: argparse.Namespace) -> int:
     print(f"\n  {total_flagged} contrast errors flagged.")
     print("  Reference: 83% on clean native-speaker audio.")
     print("\n  A low match rate here is ambiguous on purpose: it means either he")
-    print("  cannot hear you, or you genuinely say it differently. Only `roy check`")
+    print("  cannot hear you, or you genuinely say it differently. Only `tharoor check`")
     print("  can tell those apart, because only you know which it was.")
     return 0
 
@@ -385,7 +385,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         print(f"  Installation incomplete: {exc}")
         return 1
     print("\n  A missed run is not skipped: launchd fires it when you next open the lid.")
-    print("  Remove anytime with `roy install --remove`. Nothing needs sudo.")
+    print("  Remove anytime with `tharoor install --remove`. Nothing needs sudo.")
     return 0
 
 
@@ -445,7 +445,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print(f"     all {len(required)} present  ok")
 
     if problems:
-        print("\n  Stopping here. Install the libraries above and run `roy setup` again.")
+        print("\n  Stopping here. Install the libraries above and run `tharoor setup` again.")
         return 1
 
     print("\n  3. microphone permission")
@@ -495,16 +495,16 @@ def cmd_setup(args: argparse.Namespace) -> int:
     print("\n" + ("-" * 58))
     if problems:
         print(f"  Set up with problems: {', '.join(problems)}")
-        print("  Fix those and run `roy setup` again.")
+        print("  Fix those and run `tharoor setup` again.")
         return 1
     print("  Ready. Mr Tharoor is listening now and starts on every login.")
     print()
     print("  Talk normally. At 23:30 he analyses the day, at 08:30 the report")
     print("  opens by itself. Nothing leaves this machine.")
     print()
-    print("  roy gate     is he listening right now, and why")
-    print("  roy mictest  find your best microphone setup")
-    print("  roy logs     what the scheduled jobs did")
+    print("  tharoor gate     is he listening right now, and why")
+    print("  tharoor mictest  find your best microphone setup")
+    print("  tharoor logs     what the scheduled jobs did")
     return 0
 
 
@@ -635,7 +635,7 @@ def _analyse_day(args: argparse.Namespace) -> int:
 
         if failures:
             logger.error(f"{failures} sources failed; keeping the previous report and retrying later")
-            print(f"  {failures} sources failed. Previous report kept; see `roy logs`.")
+            print(f"  {failures} sources failed. Previous report kept; see `tharoor logs`.")
             return 1
 
         # ---- source 3: what you typed (Claude Code's own transcripts) ----
@@ -855,7 +855,7 @@ def cmd_selftest(args: argparse.Namespace) -> int:
     print("  every finding below is a false alarm by construction.\n")
     result = accuracy.selftest(limit=args.limit, refresh=args.refresh)
     if not result["words"]:
-        print("  no cached reference recordings yet. Run a day first, or `roy say version`.")
+        print("  no cached reference recordings yet. Run a day first, or `tharoor say version`.")
         return 1
 
     for word, contrast, expected, actual in result["examples"]:
@@ -873,7 +873,7 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         print("  The detector flags correct speech. Fix that before tuning anything.")
     else:
         print("  A floor, not the real rate: single words, quiet room, a speaker")
-        print("  without your habits. `roy check` is still the only test that")
+        print("  without your habits. `tharoor check` is still the only test that")
         print("  measures findings from your own speech.")
     return 0
 
@@ -1002,7 +1002,7 @@ def build_parser() -> argparse.ArgumentParser:
     probe_cmd.add_argument("--redo", action="store_true", help="re-record everything")
     probe_cmd.add_argument("--seconds", type=float, default=12.0, help="max per sentence")
     probe_cmd.add_argument("--device", type=int, default=None,
-                           help="input device index (roy probe --list to see them)")
+                           help="input device index (tharoor probe --list to see them)")
     probe_cmd.add_argument("--list", action="store_true", help="list input devices and exit")
     probe_cmd.set_defaults(func=cmd_probe)
 

@@ -19,7 +19,7 @@ Three agents, deliberately separate so one failing never takes the others out:
     com.tharoor.morning   08:30, opens the report and sends the day's reminders.
 
 Every agent runs as you, in your login session. Nothing installs to /Library,
-nothing needs sudo, nothing runs as root. Removing it is `roy uninstall`, and
+nothing needs sudo, nothing runs as root. Removing it is `tharoor uninstall`, and
 what that removes is three files in ~/Library/LaunchAgents.
 """
 
@@ -65,7 +65,7 @@ JOBS = {
 }
 
 
-def _roy() -> list[str]:
+def _tharoor() -> list[str]:
     """The installed command, resolved now rather than guessed at run time."""
     found = shutil.which("tharoor")
     if found:
@@ -75,7 +75,7 @@ def _roy() -> list[str]:
 
 def plist_for(label: str, job: dict) -> dict:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    command = _roy() + list(job["args"])
+    command = _tharoor() + list(job["args"])
     schedule: dict = {}
     if job.get("resident"):
         # KeepAlive: True, not {"SuccessfulExit": False}.
@@ -88,7 +88,7 @@ def plist_for(label: str, job: dict) -> dict:
         # captured four real chunks, was signalled, exited 0, and stayed down.
         #
         # True means always bring it back. Stopping it deliberately is
-        # `roy install --remove`, which unloads the job so there is nothing
+        # `tharoor install --remove`, which unloads the job so there is nothing
         # left to restart. ThrottleInterval keeps a crash loop from spinning
         # the CPU.
         schedule["RunAtLoad"] = True

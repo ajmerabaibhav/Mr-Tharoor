@@ -1,5 +1,21 @@
 # Mr Tharoor
 
+## The report is a lesson now, and the name is one name — 22 September 2026
+
+The morning page was a dark dashboard: four numbers, then cards. It is now a
+light lesson sheet, typeset in serif, printed-page first, because that is what
+a PDF is read as and because a teacher's page should look like one. Each
+correction is numbered and laid out the way a marker would write it — what you
+produced, struck through; what to produce instead; the rule underneath; the
+sentence it came from. The lesson comes before the pronunciation section, since
+that is where the material usually is, and the opening line says how many
+corrections there are and which half of the day they came from.
+
+`roy` is gone from every command, every table and every line of help: the
+command is `tharoor`. The `roy` entry point still exists, undocumented, so
+older habits and any script you wrote do not break.
+
+
 ## Grammar that finds things, and the typing half — 22 September 2026
 
 The phrasing section had been empty every morning since it was written. Seven
@@ -149,13 +165,13 @@ pass — which `MR_THAROOR_NO_LLM=1` switches off.
 ## Install
 
 ```bash
-git clone https://github.com/ajmerabaibhav/Mr-Roy-.git mr-tharoor
+git clone https://github.com/ajmerabaibhav/Mr-Tharoor.git mr-tharoor
 cd mr-tharoor
 pip install -e .
-roy setup
+tharoor setup
 ```
 
-`roy setup` does the rest: checks the machine, verifies every library, asks
+`tharoor setup` does the rest: checks the machine, verifies every library, asks
 macOS for microphone permission (say yes), downloads the two models, and
 installs three launchd agents. It names the fix for anything that fails rather
 than printing a traceback.
@@ -169,7 +185,7 @@ Then talk normally. That is the whole thing.
 ## Use
 
 ```bash
-roy listen           # start it, leave it running, forget it
+tharoor listen           # start it, leave it running, forget it
 ```
 
 That is the whole daily interaction. At 23:30 it analyses the day; the morning
@@ -177,18 +193,18 @@ report opens after 08:00, with retries after sleep or login.
 
 | Command | What it does |
 |---|---|
-| `roy listen` | the all-day loop. Context-aware, sleeps when you are not talking |
-| `roy gate` | should it be listening right now, and why |
-| `roy mictest` | compare microphone setups by measuring, not guessing |
-| `roy selftest` | false-alarm floor, measured on known-correct speech. No labelling |
-| `roy check` | judge its findings, so accuracy becomes a number |
-| `roy score` | what your answers add up to, with honest intervals |
-| `roy drill` | hear it, say it, hear it again |
-| `roy probe` | record 20 sentences that test whether it works on your voice |
-| `roy analyse-day` | run tonight's job now |
-| `roy logs` | what the scheduled jobs actually did |
-| `roy install --remove` | stop all of it. Three launch-agent files deleted. |
-| `roy analyse-pending --force` | catch up retained days, including on battery |
+| `tharoor listen` | the all-day loop. Context-aware, sleeps when you are not talking |
+| `tharoor gate` | should it be listening right now, and why |
+| `tharoor mictest` | compare microphone setups by measuring, not guessing |
+| `tharoor selftest` | false-alarm floor, measured on known-correct speech. No labelling |
+| `tharoor check` | judge its findings, so accuracy becomes a number |
+| `tharoor score` | what your answers add up to, with honest intervals |
+| `tharoor drill` | hear it, say it, hear it again |
+| `tharoor probe` | record 20 sentences that test whether it works on your voice |
+| `tharoor analyse-day` | run tonight's job now |
+| `tharoor logs` | what the scheduled jobs actually did |
+| `tharoor install --remove` | stop all of it. Three launch-agent files deleted. |
+| `tharoor analyse-pending --force` | catch up retained days, including on battery |
 
 ---
 
@@ -314,7 +330,7 @@ small samples disqualify themselves without a rule: 1 wrong out of 1 scores
 ## Honest limits
 
 **Accuracy has a floor now, measured without asking anyone anything.**
-`roy selftest` runs the detector over the human recordings already cached
+`tharoor selftest` runs the detector over the human recordings already cached
 for the report. Those are native speakers saying the word properly, so every
 finding it produces is a false alarm by construction. No labelling, no
 opinion, 25 seconds. On 86 words: **1 false alarm in 127 chances (0.8%, at
@@ -325,7 +341,7 @@ That is a floor, not the rate you would see in a meeting: single words, read
 carefully, by a speaker who does not have the habit being hunted. It bounds
 false alarms and says nothing at all about recall. Per contrast the sample
 is still thin — zero out of eight chances for /v/ means "at most 21%", not
-"never" — so the aggregate is the number worth quoting. `roy check` remains
+"never" — so the aggregate is the number worth quoting. `tharoor check` remains
 the only thing that measures findings from your own speech, and nobody has
 run it yet.
 
@@ -382,7 +398,7 @@ from the microphone is worth about 12 dB. Distance is the only lever and you
 are the only one who can pull it.
 
 So the listener no longer keeps what the analyser is going to refuse — on
-the day measured, 82% of what its own microphone collected — and `roy logs`
+the day measured, 82% of what its own microphone collected — and `tharoor logs`
 and the morning notification tell you how many went in the bin, while you
 can still move. Wispr's path needs none of it: close microphone, and it
 already knows the words.
@@ -401,7 +417,7 @@ python3 -m pytest tests -q
 The checks cover segment/audio correspondence, abstention, homographs,
 complete evidence counts, grammar rewrites, reminders, scheduler retries,
 dictionary lookups, and microphone policy. They do not measure personalised
-recognition accuracy; use `roy check` for that.
+recognition accuracy; use `tharoor check` for that.
 
 ## Licence
 

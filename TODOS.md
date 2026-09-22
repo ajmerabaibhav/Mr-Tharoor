@@ -1,5 +1,20 @@
 # What is not built, and what is known broken
 
+## Report redesign and one name — 22 September 2026
+
+- The report template is a light, serif lesson sheet, print first. Numbered
+  corrections, struck-through original, the rule under each one, context
+  quoted around the mistake rather than the first 150 characters of the
+  utterance. `@page` margins set; cards and items do not break across pages.
+- The lesson section is placed above pronunciation, and the greeting names the
+  count. Both halves are capped separately so speech cannot crowd out typing.
+- `roy` removed from all commands, help text, docs and tables; `tharoor` is the
+  only documented command. The `roy` console script is kept undocumented so
+  nothing that already exists breaks. Two references are deliberately left:
+  the process matcher in `micgate.py` (an old `roy listen` may still be
+  running) and the alias line in `pyproject.toml`.
+
+
 ## Grammar rewritten to actually find things — 22 September 2026
 
 Implemented:
@@ -81,13 +96,13 @@ built     wispr reader · grammar · listener · nightly · morning · report
           reminders · dictionary · evidence model · selftest · 4 test suites
 measured  false-alarm floor 1 in 127 chances on known-correct speech (0.8%,
           at most 3.0%); consonants 0 in 113
-unproven  recall, and precision on your own connected speech. Needs `roy check`
+unproven  recall, and precision on your own connected speech. Needs `tharoor check`
 missing   speaker filter · Windows
 ```
 
 ## The one thing that should happen next
 
-**`roy check`.** Twenty minutes of judging findings. `roy selftest` now bounds
+**`tharoor check`.** Twenty minutes of judging findings. `tharoor selftest` now bounds
 the false alarms from above — the detector does not flag correct speech — but
 a floor measured on single words read in a quiet room says nothing about
 recall, and nothing about connected speech, where sounds legitimately reduce
@@ -107,7 +122,7 @@ ordinary day against 24.0 dB through Wispr. No code fixes that.
 | 2 | ~~Grammar coverage is deliberately limited.~~ Replaced 22 Sep: the rules found zero in a month, so the checker is now the Claude Code CLI with a verify-against-transcript guard. Still depends on transcript accuracy — a mishearing can read as a grammar slip, and the prompt says to skip those. | — | `grammar.py` |
 | 3 | **Reading-aloud detection is energy plus zero-crossing.** A radio in the next room can pass it. The SNR gate and the nightly analysis catch most of that downstream, at the cost of a wasted 30s recording. | Medium | `listener.py` |
 | 4 | **Wispr schema dependency.** Another company's private database. The reader checks the schema and fails loudly, but a Wispr release can still break the primary source overnight. Fallback is the listener. | Medium | `wispr.py` |
-| 5 | **Whisper cannot recover badly-said words** on our own recordings (not Wispr's). *version* became *mission*. Two recovery routes have now been tried and measured empty — see below. Only Wispr's text, or `roy check`, tells those apart. | Medium | `listen.py` |
+| 5 | **Whisper cannot recover badly-said words** on our own recordings (not Wispr's). *version* became *mission*. Two recovery routes have now been tried and measured empty — see below. Only Wispr's text, or `tharoor check`, tells those apart. | Medium | `listen.py` |
 | 8 | **The own-microphone path barely earns its keep.** 3.1 dB median on a real day against 24.0 dB through Wispr; 82% of a day's chunks are now dropped at capture for being under the analyser's floor. It still covers meetings and reading aloud, which Wispr never hears, but it is a weak second source and the report should probably say which source a finding came from. | Medium | `listener.py` |
 | 6 | ~~Voice path ducks other audio on calls.~~ Fixed by not recording during calls at all. Apple's echo cancellation still has no true off switch, so if `LISTEN_ALWAYS` is ever restored this comes back with it. | – | `capture.py` |
 | 7 | **Windows.** ~49% of the code is portable. The missing half is CoreAudio process enumeration and voice processing, with no clean equivalent. Not until the Mac version is validated. | Low | – |
@@ -147,7 +162,7 @@ Written down so nobody spends another evening on them.
 - Collecting audio the analyser was always going to refuse: 82% of one day's
   own-microphone chunks sat under the SNR floor, costing disk, a decode at
   23:30 and a deletion. Dropped at capture now, same threshold, and counted
-  so `roy logs` and the morning notification can say the microphone is too
+  so `tharoor logs` and the morning notification can say the microphone is too
   far while you can still move it. `2026-09-20`
 - Renaming the checkout orphaned 94 of 95 cached pronunciations: the index
   stores absolute paths, and each orphan would have been re-downloaded one a

@@ -103,45 +103,56 @@ def _sureness(lower: float) -> str:
     return "worth watching"
 
 
-SECTIONS = (
-    ("spoken", "Grammar &mdash; what you said",
-     "From your dictation and reading audio, checked against the raw transcript. "
-     "Listen to the recording before accepting a correction: a recogniser can mishear."),
-    ("typed", "Grammar &mdash; what you typed",
-     "From what you typed into Claude Code. Pasted text, commands and tool output are excluded."),
-)
-
-
-def _grammar_html(habits: list[dict]) -> str:
-    """Two sections: the mistakes you speak, and the mistakes you type."""
+def _grammar_html(habits: list[dict], name: str = "") -> str:
+    """The lesson: numbered corrections, what to say instead, and why."""
     if not habits:
         return ""
     from . import grammar as _g
 
-    def one(h: dict, spoken: bool) -> str:
+    def one(h: dict, spoken: bool, number: int) -> str:
         f = _g.GrammarFinding(**{k: v for k, v in h.items() if k != "times"})
         action = html.escape(f.instruction) if f.instruction else ""
         times = int(h.get("times", 1))
-        repeat = f' &middot; {times}x this month' if times > 1 else ""
+        tag = html.escape(h["kind"])
+        if times > 1:
+            tag += f" &middot; {times} times this month"
         return (
-            '<div class="ab"><div class="who">'
-            f'<div class="word">you {"said" if spoken else "typed"}: &ldquo;{html.escape(h["said"])}&rdquo;</div>'
-            + (f'<div class="action">{action}</div>' if action else "")
-            + f'<div class="fix">&ldquo;<b>{html.escape(h["should_be"])}</b>&rdquo;'
-            f'<span class="kind">{html.escape(h["kind"])}{repeat}</span></div>'
-            f'<div class="rule">{html.escape(f.rule)}</div>'
-            f'<div class="ctx">&ldquo;{html.escape(h["context"][:160])}&rdquo;</div>'
+            f'<div class="item"><div class="num">{number}</div><div class="body">'
+            f'<div class="tagline">{tag}</div>'
+            f'<div class="said">You {"said" if spoken else "wrote"} '
+            f'&ldquo;<b>{html.escape(h["said"])}</b>&rdquo;</div>'
+            f'<div class="say">Say &ldquo;<b>{html.escape(h["should_be"])}</b>&rdquo;'
+            + (f'<span class="action">{action}</span>' if action else "")
+            + f'</div><div class="why">{html.escape(f.rule)}</div>'
+            f'<div class="ctx">&ldquo;{html.escape(h["context"][:190])}&rdquo;</div>'
             "</div></div>"
         )
 
-    out = []
-    for mode, title, blurb in SECTIONS:
-        rows = [h for h in habits if (h.get("mode") or "spoken") == mode]
+    spoken_rows = [h for h in habits if (h.get("mode") or "spoken") == "spoken"]
+    typed_rows = [h for h in habits if h.get("mode") == "typed"]
+    lead = (f'<h2 class="sect">Your lesson</h2><div class="sub2">'
+            f'{html.escape(name) + ", t" if name else "T"}here '
+            f'{"is one correction" if len(habits) == 1 else f"are {len(habits)} corrections"} below: '
+            f'{len(spoken_rows)} from your speech, {len(typed_rows)} from your typing. '
+            'Each one shows what you produced, what to produce instead, and the rule behind it.'
+            "</div>")
+    out = [lead]
+    number = 0
+    for rows, title, blurb in (
+        (spoken_rows, "What you said",
+         "From your dictation and reading audio, marked against the raw transcript. "
+         "Listen to the recording before you accept a correction: a recogniser can mishear."),
+        (typed_rows, "What you typed",
+         "From what you typed into Claude Code. Pastes, commands and tool output are excluded."),
+    ):
         if not rows:
             continue
-        items = "".join(one(h, mode == "spoken") for h in rows)
-        out.append(f'<h2 class="sect">{title}</h2><div class="sub2">{blurb}</div>'
-                   f'<div class="card">{items}</div>')
+        items = []
+        for h in rows:
+            number += 1
+            items.append(one(h, title == "What you said", number))
+        out.append(f'<h3 class="sect">{title}</h3><div class="sub2">{blurb}</div>'
+                   f'<div class="lesson">{"".join(items)}</div>')
     return "".join(out)
 
 
@@ -249,8 +260,18 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
     mood = "clear" if best >= 0.15 else ("likely" if best >= 0.08 else "watch")
     name = config.user_name()
     greeting = f"Good morning, {name}."
-    remark = (OPENERS[mood] if grouped else
-              "The analysis is complete. No pronunciation pattern passed the evidence checks today.")
+    lesson_count = len(grammar or [])
+    if grouped:
+        remark = OPENERS[mood]
+    elif lesson_count:
+        remark = (
+            f"Your sounds gave me nothing I can prove today, which is not at all the same as "
+            f"nothing to say. Your phrasing gave me {lesson_count}, and phrasing is the half a "
+            "listener notices first. They are set out below, in order."
+        )
+    else:
+        remark = ("Neither your sounds nor your phrasing produced anything I am willing to call "
+                  "a mistake today. Rest on it; I shall be listening again tomorrow.")
     clips = sum(bool(item.clip_path) for item in findings)
     quality_values = [item.quality for item in findings if item.quality is not None]
     quality = (sum(quality_values) / len(quality_values)) if quality_values else None
@@ -307,11 +328,11 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
         .replace("{{CARDS}}", body)
         .replace("{{CANDIDATES}}", candidate_html)
         .replace("{{SUMMARY}}", summary)
-        .replace("{{GRAMMAR}}", _grammar_html(grammar or []) or (
-            '<h2 class="sect">Grammar</h2>'
+        .replace("{{GRAMMAR}}", _grammar_html(grammar or [], name) or (
+            '<h2 class="sect">Your lesson</h2>'
             '<div class="card"><div class="card-head"><div class="words">'
-            'Nothing was marked in what you said or typed today. '
-            'Either the day was clean or there was too little of it to read.'
+            'Nothing was marked in what you said or typed. '
+            'Either the day was clean, or there was too little of it to read.'
             '</div></div></div>'
         ))
         .replace("{{PROVENANCE}}", _provenance(analysis or {}))
@@ -450,61 +471,107 @@ def latest_day(before: date | None = None) -> date | None:
 
 TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
 <title>Mr Tharoor - {{DATE}}</title><style>
-:root{--ground:#0B1211;--surface:#141D1C;--surface2:#182321;--ink:#E7EDEC;--ink2:#BCC9C7;--muted:#879896;
---rule:#2A3834;--accent:#69C7BE;--accentsoft:#153A36;--crit:#F08074;--gold:#E1B36A}
-*{box-sizing:border-box}body{background:var(--ground);color:var(--ink);margin:0;padding:28px 18px 70px;
-font:16px/1.55 -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
-.wrap{max-width:760px;margin:0 auto}h1{font-size:2rem;margin:0 0 4px;letter-spacing:-.02em}
-.sub{color:var(--muted);font-size:.88rem;margin-bottom:24px}
-.greet{font-family:-apple-system,"Helvetica Neue",sans-serif;font-size:1.05rem;color:var(--accent);font-weight:600;margin-bottom:6px}
-.remark{font-style:italic;color:var(--ink2);font-size:.95rem;line-height:1.5;margin:10px 0 18px;padding-left:14px;border-left:3px solid var(--accentsoft);max-width:60ch}
-.sect{font-size:1.15rem;margin:26px 0 10px;letter-spacing:-.01em}
-.sub2{color:var(--muted);font-size:.84rem;margin:-6px 0 12px}
-.fix{font-size:.95rem;color:var(--ink2);margin-top:2px}.fix b{color:var(--accent)}
-.action{display:inline-block;font-size:.8rem;font-weight:600;color:var(--accent);
-  background:var(--accentsoft);padding:2px 8px;border-radius:2px;margin:5px 0 3px}
-.rule{font-size:.78rem;color:var(--muted);font-style:italic;margin-top:4px}
-.kind{font-size:.7rem;color:var(--muted);margin-left:10px;text-transform:uppercase;letter-spacing:.06em}
-.card{background:var(--surface);border:1px solid var(--rule);margin-bottom:12px;overflow:hidden}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--rule);margin:18px 0 24px;background:var(--surface)}
-.stat{padding:13px 14px;border-right:1px solid var(--rule);min-height:86px}.stat:last-child{border-right:0}
-.stat-label{font-size:.66rem;color:var(--muted);letter-spacing:.1em;font-weight:700}.stat-value{font-size:1.65rem;line-height:1.2;margin-top:4px;color:var(--ink)}
-.stat-note{font-size:.72rem;color:var(--muted);margin-top:4px}
-.card-head{padding:14px 16px;border-bottom:1px solid var(--rule)}
-.swap{font-size:1.25rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.bad{color:var(--crit);font-weight:700}.good{color:var(--accent);font-weight:700}
-.arrow{color:var(--muted);font-size:.78rem}.n{margin-left:auto;color:var(--muted);font-size:.75rem}
-.words{font-size:.83rem;color:var(--muted);margin-top:5px}
-.ab{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:11px 16px;
+/* A lesson sheet, not a dashboard. Light paper because this is printed and
+   read; serif because it is a teacher's page. Fonts are the ones macOS
+   already has, so the file stays offline and self-contained. */
+:root{--paper:#FBFAF6;--card:#FFFFFF;--ink:#191917;--ink2:#46463F;--muted:#7C7A70;
+--rule:#E3DED1;--rule2:#CFC8B6;--wrong:#A33227;--right:#1F5C46;--mark:#1F3A5F;
+--wash:#F3EFE4;--gold:#8A6A1F;--goldwash:#FBF4E2}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);margin:0;padding:34px 20px 72px;
+font:16.5px/1.62 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
+.wrap{max-width:720px;margin:0 auto}
+.masthead{border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:3px}
+h1{font-size:2.15rem;margin:0;letter-spacing:.005em;font-weight:600}
+.rule-thin{border-bottom:1px solid var(--rule2);margin-bottom:20px;height:3px}
+.greet{font-size:1.06rem;color:var(--mark);margin:16px 0 2px;font-weight:600}
+.sub{color:var(--muted);font-size:.84rem;font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+letter-spacing:.02em;margin-bottom:18px}
+.remark{font-style:italic;color:var(--ink2);font-size:1rem;line-height:1.6;margin:8px 0 20px;
+padding-left:16px;border-left:3px solid var(--rule2);max-width:62ch}
+.sect{font-size:1.3rem;margin:34px 0 4px;font-weight:600;letter-spacing:.005em}
+.sect:after{content:"";display:block;width:56px;border-bottom:2px solid var(--ink);margin-top:7px}
+.sub2{color:var(--muted);font-size:.85rem;margin:10px 0 16px;max-width:62ch;font-style:italic}
+
+/* the day in four numbers */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--rule2);
+border-bottom:1px solid var(--rule2);margin:18px 0 26px}
+.stat{padding:14px 16px 13px;border-right:1px solid var(--rule)}.stat:last-child{border-right:0}
+.stat-label{font:600 .62rem/1.2 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--muted);
+letter-spacing:.12em;text-transform:uppercase}
+.stat-value{font-size:1.9rem;line-height:1.15;margin-top:5px}
+.stat-note{font:.7rem/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--muted);margin-top:4px}
+
+/* the lesson: one numbered correction at a time */
+.lesson{counter-reset:item}
+.item{display:grid;grid-template-columns:36px 1fr;gap:14px;padding:16px 0;
+border-bottom:1px solid var(--rule);break-inside:avoid}
+.item:last-child{border-bottom:0}
+.num{font:600 .9rem/28px -apple-system,BlinkMacSystemFont,sans-serif;text-align:center;
+width:28px;height:28px;border:1px solid var(--rule2);border-radius:50%;color:var(--muted);
+background:var(--card)}
+.said{font-size:1.06rem;color:var(--wrong)}
+.said b{font-weight:600;text-decoration:line-through;text-decoration-thickness:1px;
+text-decoration-color:rgba(163,50,39,.55)}
+.say{font-size:1.14rem;color:var(--right);margin-top:4px}.say b{font-weight:700}
+.why{font-size:.9rem;color:var(--ink2);font-style:italic;margin-top:6px}
+.tagline{font:.64rem/1 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--muted);
+letter-spacing:.11em;text-transform:uppercase;margin:4px 0 7px}
+.ctx{font-size:.84rem;color:var(--muted);margin-top:8px;padding-left:12px;
+border-left:2px solid var(--rule);line-height:1.55}
+.action{display:inline-block;font:600 .7rem/1 -apple-system,BlinkMacSystemFont,sans-serif;
+color:var(--mark);background:var(--wash);padding:5px 9px;border-radius:2px;margin-left:10px;
+letter-spacing:.03em;vertical-align:middle}
+
+/* pronunciation: a sound, then your voice against a proper one */
+.card{background:var(--card);border:1px solid var(--rule);margin-bottom:14px;break-inside:avoid}
+.card-head{padding:15px 18px;border-bottom:1px solid var(--rule);background:var(--wash)}
+.swap{font-size:1.3rem;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.bad{color:var(--wrong);font-weight:700}.good{color:var(--right);font-weight:700}
+.arrow{color:var(--muted);font:.72rem/1 -apple-system,sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.n{margin-left:auto;color:var(--muted);font:.72rem/1 -apple-system,sans-serif}
+.words{font-size:.87rem;color:var(--ink2);margin-top:7px;line-height:1.5}
+.ab{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:13px 18px;
 border-bottom:1px solid var(--rule)}.ab:last-child{border-bottom:0}
-.word{font-size:1.05rem;font-weight:600}.ipa{color:var(--muted);font-size:.85rem;font-weight:400}
-.ctx{font-size:.77rem;color:var(--muted);margin-top:2px}
-.buttons{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.pb{border:1px solid var(--rule);background:transparent;border-radius:999px;padding:7px 13px;
-font:inherit;font-size:.8rem;cursor:pointer;color:var(--ink2)}
-.pb.you{border-color:var(--crit);color:var(--crit)}
-.pb.right{border-color:var(--accent);color:var(--accent)}
-.pb[disabled]{opacity:.4;cursor:not-allowed}
-.candidate-card{background:var(--surface2);border:1px solid #6B5440;border-left:4px solid var(--gold);padding:15px 16px;margin-bottom:12px;break-inside:avoid}
+.word{font-size:1.1rem;font-weight:600}
+.ipa{color:var(--muted);font-size:.86rem;font-weight:400}
+.buttons{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.pb{border:1px solid var(--rule2);background:var(--card);border-radius:999px;padding:7px 14px;
+font:.8rem -apple-system,BlinkMacSystemFont,sans-serif;cursor:pointer;color:var(--ink2)}
+.pb.you{border-color:var(--wrong);color:var(--wrong)}
+.pb.right{border-color:var(--right);color:var(--right)}
+.pb[disabled]{opacity:.35;cursor:not-allowed}
+.candidate-card{background:var(--goldwash);border:1px solid #E2D2A8;border-left:3px solid var(--gold);
+padding:16px 18px;margin-bottom:12px;break-inside:avoid}
 .candidate-group{break-inside:avoid}
-.candidate-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.candidate-word{font-size:1.12rem;font-weight:650;margin-top:4px}
-.candidate-tag{font-size:.68rem;color:var(--gold);border:1px solid #6B5440;border-radius:999px;padding:4px 8px;white-space:nowrap}
-.candidate-transcript{font-size:.84rem;color:var(--ink2);line-height:1.55;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:10px 0;margin-top:10px}
-.candidate-foot{font-size:.74rem;color:var(--muted);margin-top:9px}
-@media(max-width:620px){.ab{grid-template-columns:1fr}.buttons{justify-content:flex-start}}
-@media(max-width:620px){.stats{grid-template-columns:repeat(2,1fr)}.stat:nth-child(2){border-right:0}.stat:nth-child(-n+2){border-bottom:1px solid var(--rule)}}
-@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.pb{display:none}.card{break-inside:avoid}body{padding-top:18px}}
+.candidate-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.candidate-word{font-size:1.14rem;font-weight:600;margin-top:5px}
+.candidate-tag{font:.66rem/1 -apple-system,sans-serif;color:var(--gold);border:1px solid #E2D2A8;
+border-radius:999px;padding:5px 9px;white-space:nowrap;text-transform:uppercase;letter-spacing:.08em}
+.candidate-transcript{font-size:.86rem;color:var(--ink2);line-height:1.6;border-top:1px solid #E7DCBF;
+border-bottom:1px solid #E7DCBF;padding:11px 0;margin-top:11px}
+.candidate-foot{font:.74rem/1.5 -apple-system,sans-serif;color:var(--muted);margin-top:10px}
+.tribute{font-size:.76rem;color:var(--muted);line-height:1.6;margin-top:30px;padding-top:14px;
+border-top:1px solid var(--rule)}
+@media(max-width:620px){.ab{grid-template-columns:1fr}.buttons{justify-content:flex-start}
+.stats{grid-template-columns:repeat(2,1fr)}.stat:nth-child(2){border-right:0}
+.stat:nth-child(-n+2){border-bottom:1px solid var(--rule)}
+.item{grid-template-columns:28px 1fr;gap:10px}}
+@page{margin:16mm 15mm}
+@media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.pb{display:none}body{padding:0 0 12px;font-size:11.5pt}.wrap{max-width:none}
+.sect{break-after:avoid}.card,.item{break-inside:avoid}}
 </style></head><body><div class="wrap">
+<div class="masthead"><h1>Mr Tharoor</h1></div><div class="rule-thin"></div>
+<div class="sub">{{DATE}} &middot; a lesson made from what you said and what you wrote</div>
 <div class="greet">{{GREETING}}</div>
-<h1>What I heard you say</h1>
 <div class="remark">{{REMARK}}</div>
-<div class="sub">{{DATE}} &middot; {{TOTAL}} examples across {{SOUNDS}} sound patterns &middot; compare your voice with the reference</div>
 {{STATS}}
-{{SUMMARY}}
+{{GRAMMAR}}
 <h2 class="sect">Pronunciation</h2>
 {{CARDS}}
 {{CANDIDATES}}
-{{GRAMMAR}}
+{{SUMMARY}}
 {{PROVENANCE}}
 <div class="tribute">Mr Tharoor is a fictional mascot, named in tribute to Dr Shashi Tharoor.
 This software is not affiliated with, endorsed by, or connected to him. Every word it speaks

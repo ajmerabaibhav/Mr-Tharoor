@@ -265,7 +265,7 @@ def _relocate(entry: Pronunciation) -> Pronunciation:
     """Find audio the cache remembers at a path that no longer exists.
 
     The index stores absolute paths, so renaming the checkout orphaned every
-    one of them: 94 of 95 entries pointed into ~/mr-roy the morning after the
+    one of them: 94 of 95 entries pointed into the old checkout path the
     rename. Each would have been re-downloaded one at a time, inside a 90
     second nightly budget, and the report would have gone days without the
     human recording that is the whole point of it. The files were never gone,
