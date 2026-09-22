@@ -1,37 +1,44 @@
-"""What you said, against what you meant to say. The grammar half.
+"""What you said and what you typed, against what a teacher would mark.
 
-Pronunciation is one habit. "Discuss about", "revert back", "I am having a
-doubt", a missing article, a preposition off by one -- those are the other
-habit, and they cost the same thing in a meeting: the listener has to work
-harder to follow you.
+Pronunciation is one habit. "Discuss about", "revert back", "I did not went",
+"the people that is building" -- those are the other habit, and they cost the
+same thing in a meeting: the listener has to work harder to follow you.
 
-Wispr Flow already produces the comparison. Its recogniser writes down what
-you said; its language model rewrites it into what you meant; and when you
-correct that by hand, you produce the best version of all. The difference
-between the first and the last is a list of your own corrections, made for
-you, every time you dictate.
+Two engines live here.
 
-Most of that difference is NOT grammar. The model also strips fillers, moves
-commas, and rephrases for style. So the diff is filtered hard, and only the
-kinds of change that a grammar teacher would mark survive:
+    check() / compare()   seven explicit rules and your own hand corrections.
+                          Local, free, and measured: across a month of real
+                          dictation they found nothing at all.
 
-    preposition     "discuss about it"  ->  "discuss it"
-    article         "I am engineer"     ->  "I am an engineer"
-    number          "one of the thing"  ->  "one of the things"
-    verb form       "he don't"          ->  "he doesn't"
-    fixed phrase    "revert back"       ->  "reply"
+    llm_check()           the Claude Code CLI already installed on this
+                          machine, given the day's raw transcripts. On one
+                          real day: 23 corrections where the rules found 0.
 
-Everything else -- rewording, reordering, a sentence cut in half -- is
-discarded, because reporting a style preference as a mistake is how a tool
-loses someone's trust in one morning.
+The rules remain as the fallback when the CLI is absent or MR_THAROOR_NO_LLM
+is set, because a grammar section that needs a network is worse than a thin
+one that does not.
+
+What keeps the second engine honest is not the prompt, it is the check after
+it: every correction must quote a span that really appears in the transcript,
+or it is dropped. A model that invents a mistake you never made loses the
+whole report's credibility in one morning.
+
+A transcript can still be wrong. Speech is marked against what the recogniser
+heard, so a mishearing can read as a grammar slip; the report says so, and the
+recording is there to check against.
 """
 
 from __future__ import annotations
 
 import difflib
+import json
+import os
 import re
+import shutil
+import subprocess
 from collections import Counter
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 FILLERS = {"um", "uh", "umm", "uhh", "hmm", "like", "yeah", "yep", "okay", "ok", "so",
            "basically", "actually", "literally", "you know", "i mean", "right", "well"}
@@ -85,7 +92,9 @@ class GrammarFinding:
     source: str  # which dictation
     change: str = ""  # "add", "use", "drop"
     word: str = ""  # the word to add, use, or drop
-    basis: str = "legacy"  # rule | user_edit; old rewrite-only findings stay archived
+    basis: str = "legacy"  # rule | user_edit | llm; old rewrite-only findings stay archived
+    why: str = ""  # the rule, in the checker's own words
+    mode: str = "spoken"  # spoken | typed -- which half of the day this came from
 
     @property
     def headline(self) -> str:
@@ -104,7 +113,7 @@ class GrammarFinding:
 
     @property
     def rule(self) -> str:
-        return RULES.get(self.kind, "")
+        return self.why or RULES.get(self.kind, "")
 
 
 def _describe(before: list[str], after: list[str]) -> tuple[str, str]:
@@ -277,3 +286,205 @@ def summarise(findings: list[GrammarFinding], limit: int = 8) -> list[dict]:
         f = example[key]
         rows.append({**asdict(f), "times": n})
     return rows
+
+
+# --------------------------------------------------------------------------
+# The checker that actually finds things.
+#
+# The rules above catch seven constructions. Measured against a month of real
+# dictation they found nothing: every grammar.json this project has written is
+# an empty list. A person's actual mistakes -- "the result which you have
+# gave", "the people that is building", "tell me that whether" -- are not seven
+# patterns, and writing the eighth, ninth and two-hundredth regex is a life.
+#
+# Claude Code is already installed on this machine and already holds a
+# subscription, so the grammar half costs one subprocess call a night and no
+# new dependency. Text leaves the laptop for that call; audio never does, and
+# the great majority of this text was dictated or typed into Claude to begin
+# with. MR_THAROOR_NO_LLM=1 turns it off and leaves the local rules.
+#
+# Every correction it returns is checked against the transcript before it is
+# believed: if the span it claims you said is not in the text, it is dropped.
+# --------------------------------------------------------------------------
+
+LLM_MODEL = os.environ.get("MR_THAROOR_LLM_MODEL", "claude-haiku-4-5-20251001")
+LLM_BATCH = 20  # utterances per call
+LLM_MAX_BATCHES = 8  # a day cannot cost more than this
+LLM_TIMEOUT = 420  # seconds per call; the nightly job has all night
+
+PROMPT = """You are an exacting English teacher marking a fluent Indian English speaker's real {kind}. Each numbered item below is one {unit}.
+
+Mark ONLY errors a grammar teacher would mark: subject-verb agreement, tense, articles, prepositions, singular/plural, verb form, word order, pronouns, countability, and fixed-phrase misuse ("discuss about", "revert back", "one of my friend").
+
+Do NOT mark: punctuation, capitalisation, spelling, filler words (um, yeah, so, like), repetition or self-correction, incomplete sentences, style, wordiness, register, or anything that is merely a different way of saying the same thing. {caveat}
+
+For each real error output ONE line of JSON and nothing else:
+{{"i": <item number>, "said": "<the exact 2-8 word span, copied verbatim from the item>", "should_be": "<the corrected span>", "kind": "<article|preposition|number|verb|tense|word-order|pronoun|phrase>", "why": "<max 12 words, the rule>"}}
+
+No preamble, no markdown fences, no summary, no repeated corrections. If an item has no error, output nothing for it. Be strict: when in doubt, leave it out.
+
+ITEMS:
+{items}"""
+
+SPOKEN_CAVEAT = ("This is speech-to-text output, so a wrong word the recogniser produced is NOT an error: "
+                 "skip anything that reads like a mishearing rather than a grammar slip.")
+TYPED_CAVEAT = ("This is typed into a terminal, so missing capitals and apostrophes are not errors, "
+                "and a typo is not a grammar mistake.")
+
+KINDS = {"article", "preposition", "number", "verb", "tense", "word-order", "pronoun", "phrase"}
+
+
+def llm_binary() -> str | None:
+    """launchd's PATH is four directories long. Find the CLI ourselves."""
+    found = shutil.which("claude")
+    if found:
+        return found
+    for candidate in (Path.home() / ".local/bin/claude", Path("/opt/homebrew/bin/claude"),
+                      Path("/usr/local/bin/claude")):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def llm_available() -> bool:
+    return not os.environ.get("MR_THAROOR_NO_LLM") and llm_binary() is not None
+
+
+def _normalised(text: str) -> str:
+    return " ".join(_words(text))
+
+
+def _run_claude(prompt: str) -> str:
+    """One headless call. No MCP servers: measured, they doubled the wall time.
+
+    cwd is inside our own data directory on purpose. Claude Code writes a
+    transcript for every session under ~/.claude/projects/<cwd>/, and typed.py
+    reads those transcripts as the day's typing -- so a grammar call made from
+    the user's own project would feed its own prompt back in tomorrow night.
+    """
+    from . import config
+
+    binary = llm_binary()
+    if not binary:
+        return ""
+    workdir = config.DATA_DIR / "llm"
+    workdir.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        [binary, "-p", prompt, "--model", LLM_MODEL,
+         "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}'],
+        capture_output=True, text=True, timeout=LLM_TIMEOUT, cwd=str(workdir),
+        env=_environment(),
+    )
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or "claude exited non-zero").strip()[:200])
+    return result.stdout
+
+
+def _environment() -> dict:
+    """The environment launchd does not necessarily give us.
+
+    MEASURED, and the reason this function exists: with USER unset the CLI
+    answers "Not logged in - please run /login" and exits 0, so the nightly
+    job would have found nothing every night and said nothing about why. PATH
+    is widened for the same class of reason: the CLI runs the user's own
+    hooks, and those call node.
+    """
+    import pwd
+
+    env = dict(os.environ)
+    env.setdefault("HOME", str(Path.home()))
+    try:
+        env.setdefault("USER", pwd.getpwuid(os.getuid()).pw_name)
+    except KeyError:
+        pass
+    parts = env.get("PATH", "").split(":")
+    for extra in (str(Path.home() / ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"):
+        if extra not in parts:
+            parts.append(extra)
+    env["PATH"] = ":".join(p for p in parts if p)
+    return env
+
+
+def _around(text: str, said: str, width: int = 150) -> str:
+    """The sentence around the mistake. The first 150 characters of a two
+    minute dictation are usually nowhere near it, which teaches nothing."""
+    text = " ".join(text.split())
+    at = text.lower().find(said.lower().strip())
+    if at < 0:  # matched on normalised words, so the raw span may differ
+        first = _words(said)[0] if _words(said) else ""
+        at = text.lower().find(first) if first else -1
+    if at < 0:
+        return text[:width]
+    start = max(0, at - width // 3)
+    snippet = text[start:start + width]
+    return ("..." if start else "") + snippet + ("..." if start + width < len(text) else "")
+
+
+def parse_llm(reply: str, items: list[tuple[str, str]], mode: str = "spoken") -> list[GrammarFinding]:
+    """Believe a correction only when the span it quotes is really in the text."""
+    out: list[GrammarFinding] = []
+    seen: set[tuple] = set()
+    for line in reply.splitlines():
+        line = line.strip().strip("`")
+        if not line.startswith("{"):
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        try:
+            index = int(row["i"]) - 1
+            said, should_be = str(row["said"]).strip(), str(row["should_be"]).strip()
+            kind, why = str(row.get("kind", "")).strip(), str(row.get("why", "")).strip()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (0 <= index < len(items)) or not said or not should_be:
+            continue
+        source, text = items[index]
+        if _normalised(said) not in _normalised(text):
+            continue  # not in the transcript: a paraphrase or an invention
+        if _normalised(said) == _normalised(should_be):
+            continue
+        key = (source, _normalised(said), _normalised(should_be))
+        if key in seen:
+            continue
+        seen.add(key)
+        change, word = _describe(_words(said), _words(should_be))
+        if kind == "word-order":
+            change, word = "", ""  # "use X" is meaningless when the words only moved
+        out.append(GrammarFinding(
+            kind=kind if kind in KINDS else "phrase", said=said, should_be=should_be,
+            context=_around(text, said), source=source, change=change, word=word,
+            basis="llm", why=why[:90], mode=mode,
+        ))
+    return out
+
+
+def llm_check(items: list[tuple[str, str]], mode: str = "spoken", *, logger=None) -> list[GrammarFinding]:
+    """Grammar over a day's utterances. `items` is [(source label, text), ...]."""
+    items = [(source, text) for source, text in items if len(_words(text)) >= 4]
+    if not items or not llm_available():
+        return []
+    out: list[GrammarFinding] = []
+    batches = [items[i:i + LLM_BATCH] for i in range(0, len(items), LLM_BATCH)][:LLM_MAX_BATCHES]
+    for batch in batches:
+        listing = "\n".join(f"[{n}] {text.strip()[:600]}" for n, (_, text) in enumerate(batch, 1))
+        prompt = PROMPT.format(
+            kind="speech" if mode == "spoken" else "writing",
+            unit="utterance" if mode == "spoken" else "message",
+            caveat=SPOKEN_CAVEAT if mode == "spoken" else TYPED_CAVEAT,
+            items=listing,
+        )
+        try:
+            reply = _run_claude(prompt)
+        except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+            if logger:
+                logger.warning(f"grammar check failed ({mode}): {type(exc).__name__}: {exc}")
+            break
+        found = parse_llm(reply, batch, mode)
+        if not found and "{" not in reply and logger:
+            # An empty reply is normal; an empty reply that is not JSON at all
+            # is the CLI telling us something, usually that it is logged out.
+            logger.warning(f"grammar checker said: {reply.strip()[:120] or '(nothing)'}")
+        out += found
+    return out

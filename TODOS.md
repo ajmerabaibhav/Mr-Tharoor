@@ -1,5 +1,36 @@
 # What is not built, and what is known broken
 
+## Grammar rewritten to actually find things — 22 September 2026
+
+Implemented:
+
+- The seven local regexes found **zero** corrections across a month of real
+  dictation. Every `*-grammar.json` on disk is `[]`. Grammar now goes through
+  the Claude Code CLI already installed here, batched, once or twice a night.
+  On 20 September: **20 corrections** where the old path found none.
+- Every returned correction is checked against the transcript before it is
+  shown. If the span it quotes is not in the text, it is dropped — that is the
+  whole defence against an invented mistake, and it is cheap.
+- The report no longer requires a correction to repeat before showing it.
+  Requiring `times >= 2` is why the section was empty on days that had plenty
+  in them. Yesterday's mistakes come first, repeated habits after.
+- `typed.py`: what you typed into Claude Code, from its own transcripts, as a
+  third source. Grammar only. Excluded: pastes, slash commands, tool output,
+  interrupts, anything under a Mr Tharoor project folder (the checker is
+  Claude Code, and without that filter its own prompt comes back as homework).
+- Dictated text pasted into a text box is not counted as typing: the day's
+  Wispr texts are passed as an exclusion list.
+
+Known ceilings of this approach:
+
+| What | Why it is acceptable |
+|---|---|
+| Transcript text now leaves the machine | Stated in the README and in the report footer. Audio still does not. `MR_THAROOR_NO_LLM=1` reverts to local rules. |
+| Typing is Claude Code only | Everything else needs an Accessibility keylogger, which would put passwords in a grammar report. Revisit only if the typing section proves useful. |
+| Text someone else wrote, pasted in and typed around, can be marked | Only when pasted without Claude Code's own `pasted_content` tags. Rare, low harm. |
+| One or two subprocess calls a night, ~90s each | Nightly job, no interactive path. Capped at 8 batches a day. |
+
+
 ## Reliability repairs — 20 September 2026
 
 Implemented and regression tested:
@@ -73,7 +104,7 @@ ordinary day against 24.0 dB through Wispr. No code fixes that.
 | # | What | Severity | Where |
 |---|------|----------|-------|
 | 1 | **No speaker filter**, so meetings are simply not recorded any more: the microphone stays shut while another app holds it. That removes the consent problem and the wrong-speaker data, and gives up the only source for meetings. ~150 lines with voice enrolment would buy it back. | Medium | `context.py` |
-| 2 | **Grammar coverage is deliberately limited.** Local rules and hand edits avoid model style judgements, but cannot detect every grammar issue and still depend on transcript accuracy. | Medium | `grammar.py` |
+| 2 | ~~Grammar coverage is deliberately limited.~~ Replaced 22 Sep: the rules found zero in a month, so the checker is now the Claude Code CLI with a verify-against-transcript guard. Still depends on transcript accuracy — a mishearing can read as a grammar slip, and the prompt says to skip those. | — | `grammar.py` |
 | 3 | **Reading-aloud detection is energy plus zero-crossing.** A radio in the next room can pass it. The SNR gate and the nightly analysis catch most of that downstream, at the cost of a wasted 30s recording. | Medium | `listener.py` |
 | 4 | **Wispr schema dependency.** Another company's private database. The reader checks the schema and fails loudly, but a Wispr release can still break the primary source overnight. Fallback is the listener. | Medium | `wispr.py` |
 | 5 | **Whisper cannot recover badly-said words** on our own recordings (not Wispr's). *version* became *mission*. Two recovery routes have now been tried and measured empty — see below. Only Wispr's text, or `roy check`, tells those apart. | Medium | `listen.py` |

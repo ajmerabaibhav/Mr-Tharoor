@@ -1,5 +1,38 @@
 # Mr Tharoor
 
+## Grammar that finds things, and the typing half — 22 September 2026
+
+The phrasing section had been empty every morning since it was written. Seven
+regular expressions and a filtered diff, run over a month of real dictation,
+produced an empty list every single night. The mistakes were plainly there in
+the transcripts — *"the result which you have gave"*, *"I did not went"*,
+*"write a email"*, *"the people that is building"* — and no rule caught one
+of them. Writing the two-hundredth regex is not a plan.
+
+The grammar half now calls the Claude Code CLI already installed on this
+machine, once or twice a night, with the day's raw transcripts. On 20
+September, where the old checker found **nothing**, it found **20** real
+corrections. Every correction is verified against the transcript before it is
+believed: if the span it claims you said is not in the text, it is dropped.
+
+**What you type is marked too.** Claude Code already stores every message you
+type, in `~/.claude/projects/*/*.jsonl`. That is read as the typing half of the
+day — pasted blocks, slash commands, tool output and the checker's own
+prompts excluded — and the morning PDF now has two grammar sections: what you
+said, and what you typed.
+
+**This is a change of posture and it is stated plainly.** Text now leaves the
+laptop, for that one call. Audio still never does. Most of the text in question
+was dictated or typed into Claude to begin with. `MR_THAROOR_NO_LLM=1` turns it
+off and leaves the old local rules; without the Claude CLI on PATH, grammar
+falls back to them automatically.
+
+Meetings: a dictation made during a meeting is covered like any other, because
+Wispr Flow records it. Live meeting speech that never goes through Wispr is
+still not captured, for the three measured reasons below — it spoils the call,
+the audio is 4.5x quieter, and there is no speaker filter.
+
+
 ## Automation and PDF recovery - 21 September 2026
 
 `tharoor install` now targets the macOS desktop login session explicitly and
@@ -72,7 +105,7 @@ the next day to include late speech. Raw audio still expires after three days.
 The HTML report remains the interactive review because it can play your voice
 and the dictionary reference. The morning job also opens the PDF in Preview;
 PDF and Word exports are optional local outputs when their converters are
-installed. There is no cloud LLM call.
+installed. Grammar calls the local Claude Code CLI; see 22 September above.
 The existing local speech models are still required to interpret microphone audio.
 
 Meetings remain disabled: the current code cannot reliably distinguish your
@@ -106,9 +139,10 @@ You cannot learn a sound by reading a symbol. `/ˈvɜːʒn̩/` teaches nobody
 anything. Hearing yourself say *wersion*, then hearing *version*, teaches it in
 one second.
 
-macOS only. Everything runs on your machine: no API keys, no accounts, no
-audio leaves the laptop. The single network call is fetching a human recording
-of a word the first time it gets flagged.
+macOS only. No audio ever leaves the laptop and no API key is needed. Two
+things do go out: a human recording of a word, fetched the first time it is
+flagged, and the day's transcripts, sent to the Claude Code CLI for the grammar
+pass — which `MR_THAROOR_NO_LLM=1` switches off.
 
 ---
 
@@ -160,7 +194,7 @@ report opens after 08:00, with retries after sleep or login.
 
 ## Where the speech comes from
 
-Two sources, best first.
+Three sources, best first.
 
 **Wispr Flow's own database.** If you dictate with Wispr Flow, every
 dictation is already stored on your Mac: the audio, what the recogniser heard,
@@ -179,6 +213,12 @@ if a release changes it.
 notes. Words come from Whisper here, which is weaker than Wispr's text, so
 these findings count for a little less. Calls and meetings are deliberately
 not recorded — see below.
+
+**What you typed**, from Claude Code's own transcripts. Grammar only: there is
+no audio, so there is nothing to say about pronunciation. It is deliberately
+limited to Claude Code, because reading every keystroke on this machine would
+mean an Accessibility keylogger and a morning report that could contain a
+password.
 
 ## How it decides to listen
 
@@ -257,6 +297,8 @@ small samples disqualify themselves without a rule: 1 wrong out of 1 scores
 
 ## Privacy
 
+- Transcript text leaves the machine once a night, for the grammar pass.
+  `MR_THAROOR_NO_LLM=1` stops that and the local rules take over.
 - Audio never leaves the machine. Raw recordings delete after 3 days; the
   tallies they produced are kept forever, because counts are free and audio
   is not.

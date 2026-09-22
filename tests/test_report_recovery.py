@@ -134,8 +134,8 @@ def test_pending_repairs_missing_export_without_reanalysing(monkeypatch):
 def test_partial_day_and_processing_counts_are_visible():
     day = date.today()
     rendered = report.build_html([], day, analysis={"completed_at": f"{day}T10:00:00",
-            "sources": {"wispr": 5, "own": 2}, "opportunities": 20, "candidates": 1})
-    assert "5 Wispr recordings and 2 reading recordings analysed" in rendered
+            "sources": {"wispr": 5, "own": 2, "typed": 3}, "opportunities": 20, "candidates": 1})
+    assert "5 Wispr recordings, 2 reading recordings and 3 typed messages read" in rendered
     assert "20 sound opportunities checked" in rendered
     assert "partial-day report" in rendered
 
