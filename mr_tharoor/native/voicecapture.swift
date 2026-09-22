@@ -51,7 +51,11 @@ if wantsVoiceProcessing {
     }
 }
 
-let hardwareFormat = input.outputFormat(forBus: 0)
+// The input scope is the device's hardware format. The output scope can be
+// stale for a moment after the default microphone route changes, and the input
+// node cannot perform format conversion. Using that stale format makes
+// installTap fail with "format mismatch" on multi-channel devices.
+let hardwareFormat = input.inputFormat(forBus: 0)
 
 // The phoneme model wants 16 kHz mono float. Convert once, here, rather than
 // resampling later where a cheap resampler would undo the quality we gained.

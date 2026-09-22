@@ -114,8 +114,17 @@ def record(seconds: float, destination: str, voice_processing: bool = True) -> d
             except Exception as exc:  # noqa: BLE001
                 print(f"mr-tharoor: could not disable audio ducking ({exc})")
 
-    fmt = node.outputFormatForBus_(0)
+    # The input scope is the hardware format.  The output scope can briefly
+    # retain the previous route's channel layout after the default microphone
+    # changes (for example, from a one-channel headset to the two-channel Mac
+    # array).  Passing that stale output format to installTap raises
+    # "Failed to create tap due to format mismatch" until the process is
+    # restarted.  AVAudioInputNode cannot convert formats, so use the actual
+    # hardware format on both sides of the tap and resample after capture.
+    fmt = node.inputFormatForBus_(0)
     rate = int(fmt.sampleRate())
+    if rate <= 0 or int(fmt.channelCount()) <= 0:
+        raise OSError("no usable microphone input format")
 
     # Write at the hardware rate through AVAudioFile, which handles the
     # buffer plumbing, then resample once in numpy. Writing 48k buffers into
@@ -132,65 +141,72 @@ def record(seconds: float, destination: str, voice_processing: bool = True) -> d
     import os as _os
 
     _os.close(handle)
-    # Take the settings from the node's own format. Writing a three-channel
-    # buffer into a file declared as mono fails on every write, and because a
-    # dropped buffer must not crash a recording, it fails silently: you get a
-    # perfectly valid wav file containing nothing.
-    settings = dict(fmt.settings())
-    settings[AVFoundation.AVLinearPCMIsFloatKey] = False
-    settings[AVFoundation.AVLinearPCMBitDepthKey] = 16
-    audio_file, error = AVFoundation.AVAudioFile.alloc().initForWriting_settings_error_(
-        NSURL.fileURLWithPath_(raw_path), settings, None
-    )
-    if audio_file is None:
-        raise OSError(f"cannot open {raw_path}: {error}")
-
+    audio_file = None
+    tap_installed = False
+    completed = False
     failures = {"count": 0}
-
-    def tap(buffer, when):
-        written, write_error = audio_file.writeFromBuffer_error_(buffer, None)
-        if not written:
-            failures["count"] += 1
-
-    node.installTapOnBus_bufferSize_format_block_(0, 4096, fmt, tap)
-    ok, error = engine.startAndReturnError_(None)
-    if not ok:
-        raise OSError(f"cannot start audio engine: {error}")
-
     try:
+        # Take the settings from the hardware format. Writing a multi-channel
+        # buffer into a file declared as mono fails on every write, and because
+        # a dropped buffer must not crash a recording, it fails silently: you
+        # get a perfectly valid wav file containing nothing.
+        settings = dict(fmt.settings())
+        settings[AVFoundation.AVLinearPCMIsFloatKey] = False
+        settings[AVFoundation.AVLinearPCMBitDepthKey] = 16
+        audio_file, error = AVFoundation.AVAudioFile.alloc().initForWriting_settings_error_(
+            NSURL.fileURLWithPath_(raw_path), settings, None
+        )
+        if audio_file is None:
+            raise OSError(f"cannot open {raw_path}: {error}")
+
+        def tap(buffer, when):
+            written, write_error = audio_file.writeFromBuffer_error_(buffer, None)
+            if not written:
+                failures["count"] += 1
+
+        node.installTapOnBus_bufferSize_format_block_(0, 4096, fmt, tap)
+        tap_installed = True
+        engine.prepare()
+        ok, error = engine.startAndReturnError_(None)
+        if not ok:
+            raise OSError(f"cannot start audio engine: {error}")
+
         time.sleep(seconds)
-    except BaseException:
-        node.removeTapOnBus_(0)
-        engine.stop()
-        del audio_file
-        Path(raw_path).unlink(missing_ok=True)  # never leave scratch behind
-        raise
+        completed = True
     finally:
         try:
-            node.removeTapOnBus_(0)
+            if tap_installed:
+                node.removeTapOnBus_(0)
             engine.stop()
-            del audio_file  # flush and close before reading it back
         except Exception:
             pass
+        # Release and flush the AVAudioFile before soundfile opens it. More
+        # importantly, put cleanup around setup too: installTap/start failures
+        # used to leave one 4 KiB scratch WAV behind on every retry.
+        audio_file = None
+        if not completed:
+            Path(raw_path).unlink(missing_ok=True)
 
-    if failures["count"]:
-        print(f"mr-tharoor: {failures['count']} buffers failed to write")
-    audio, file_rate = sf.read(raw_path, dtype="float32")
-    channel_levels: list[float] = []
-    if audio.ndim > 1:
-        # With voice processing on, the node hands back three channels but the
-        # processed, beamformed signal is not spread across them -- averaging
-        # buried it 15 dB under two near-silent neighbours. Take the loudest
-        # channel instead: correct whichever one Apple decides to use.
-        channel_levels = [
-            float(np.sqrt((audio[:, c] ** 2).mean())) for c in range(audio.shape[1])
-        ]
-        audio = audio[:, int(np.argmax(channel_levels))]
-    if len(audio) == 0:
-        raise OSError("recording produced no audio: check microphone permission")
-    audio = _resample_to_16k(audio, file_rate).astype("float32")
-    sf.write(destination, audio, TARGET_RATE)
-    Path(raw_path).unlink(missing_ok=True)
+    try:
+        if failures["count"]:
+            print(f"mr-tharoor: {failures['count']} buffers failed to write")
+        audio, file_rate = sf.read(raw_path, dtype="float32")
+        channel_levels: list[float] = []
+        if audio.ndim > 1:
+            # With voice processing on, the node hands back three channels but the
+            # processed, beamformed signal is not spread across them -- averaging
+            # buried it 15 dB under two near-silent neighbours. Take the loudest
+            # channel instead: correct whichever one Apple decides to use.
+            channel_levels = [
+                float(np.sqrt((audio[:, c] ** 2).mean())) for c in range(audio.shape[1])
+            ]
+            audio = audio[:, int(np.argmax(channel_levels))]
+        if len(audio) == 0:
+            raise OSError("recording produced no audio: check microphone permission")
+        audio = _resample_to_16k(audio, file_rate).astype("float32")
+        sf.write(destination, audio, TARGET_RATE)
+    finally:
+        Path(raw_path).unlink(missing_ok=True)
 
     return {
         "path": destination,

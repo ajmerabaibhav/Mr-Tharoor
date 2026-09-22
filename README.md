@@ -29,8 +29,9 @@ tharoor logs
 tharoor analyse-pending --force
 ```
 
-The morning job opens the interactive HTML review, which includes audio
-playback. The matching PDF is stored in `reports/YYYY-MM-DD.pdf`. No new
+The morning job opens the PDF in Preview and the interactive HTML review in
+your browser, where audio playback is available. The PDF is also stored in
+`reports/YYYY-MM-DD.pdf`. No new
 full-day PDF is expected at the start of that same day: the morning review
 covers the preceding day.
 
@@ -68,9 +69,10 @@ completed local report exists and opens it once per report/day between 08:00
 and 21:00, outside calls. A day analysed before midnight is finalised again
 the next day to include late speech. Raw audio still expires after three days.
 
-The existing HTML report remains the daily review because it can play your
-voice and the dictionary reference. PDF and Word exports are optional local
-outputs when their converters are installed. There is no cloud LLM call.
+The HTML report remains the interactive review because it can play your voice
+and the dictionary reference. The morning job also opens the PDF in Preview;
+PDF and Word exports are optional local outputs when their converters are
+installed. There is no cloud LLM call.
 The existing local speech models are still required to interpret microphone audio.
 
 Meetings remain disabled: the current code cannot reliably distinguish your
@@ -78,9 +80,11 @@ voice from other speakers, and its previous shared voice-processing path
 degraded calls. Reading detection is a heuristic based on the foreground app,
 output audio, and sampled speech; it cannot know which text you are reading.
 
-Run the automated checks with `python3 -m pytest tests -q`. The tests isolate
-the user's data and mock capture. The explicit hardware check is separate:
-`python3 tests/test_micgate.py` (opens a test microphone stream).
+From the same Python environment that installed Mr Tharoor, install the dev
+extras once with `python -m pip install -e '.[dev]'`, then run the automated
+checks with `python -m pytest tests -q`. The tests isolate the user's data and
+mock capture. The explicit hardware check is separate:
+`python tests/test_micgate.py` (opens a test microphone stream).
 
 A pronunciation and phrasing coach that listens to how you actually talk, and
 each morning greets you with the words you got wrong, your own voice next to a
