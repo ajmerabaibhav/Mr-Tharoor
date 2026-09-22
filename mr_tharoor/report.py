@@ -43,6 +43,56 @@ def _find_chromium() -> Path | None:
 
 CHROMIUM = _find_chromium()
 
+# How a sound going wrong actually looks in letters. IPA teaches nobody
+# anything on a printed page; "you said WERSION, the word is VERSION" teaches
+# in one second. The respelling is an approximation of what came out, and the
+# report says so -- the recording is the ground truth.
+AS_HEARD = {
+    "v->w": ("v", "w"), "w->v": ("w", "v"), "th->t": ("th", "t"), "dh->d": ("th", "d"),
+    "z->s": ("z", "s"), "s->z": ("s", "z"), "zh->j": ("si", "sh"), "f->ph": ("f", "p"),
+    "final-d": ("d", "t"), "ae->e": ("a", "e"), "o->aw": ("o", "aw"),
+}
+
+
+def _as_heard(word: str, contrast: str) -> str | None:
+    """The word spelled the way it came out, or None when letters cannot show it."""
+    pair = AS_HEARD.get(contrast)
+    if not pair or not word:
+        return None
+    wrong, letters = pair
+    low = word.lower()
+    if contrast == "final-d":
+        return low[:-1] + letters if low.endswith(wrong) else None
+    if wrong not in low:
+        return None
+    said = low.replace(wrong, letters, 1)
+    return said if said != low else None
+
+
+# The mascot, drawn rather than fetched: inline SVG keeps the report one
+# self-contained file that works offline and prints in ink. He is a fictional
+# professor -- round spectacles, swept hair, a band collar -- and deliberately
+# not a likeness of any living person. See the tribute note at the foot.
+PORTRAIT = """<svg class="portrait" viewBox="0 0 104 124" role="img" aria-label="Mr Tharoor">
+<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<path d="M7 122c2-18 13-27 27-31l18-4 18 4c14 4 25 13 27 31" />
+<path d="M44 76v13M60 76v13" />
+<path d="M44 89l-4 33M60 89l4 33" />
+<path d="M40 96h24" />
+<ellipse cx="52" cy="50" rx="21" ry="25" />
+<path d="M31 45c1-19 9-27 21-27s20 8 21 27c-2-12-9-18-21-18s-19 6-21 18z" fill="currentColor" stroke="none" />
+<path d="M31 42c-2-1-4 1-4 4M73 42c2-1 4 1 4 4" />
+<path d="M31 50c-3 0-5 3-4 6s3 5 6 4M73 50c3 0 5 3 4 6s-3 5-6 4" />
+<circle cx="42" cy="52" r="8.5" /><circle cx="62" cy="52" r="8.5" />
+<path d="M50.5 52h3M33.5 50l-3-2M70.5 50l3-2" />
+<path d="M37 40c3-2 7-2 9 1M58 41c2-3 6-3 9-1" />
+<path d="M42 66c4-3 7-1 10-1s6-2 10 1c-4 4-16 4-20 0z" fill="currentColor" stroke="none" />
+<path d="M47 73c3 2 7 2 10 0" />
+</g>
+<circle cx="42" cy="52" r="1.8" fill="currentColor" /><circle cx="62" cy="52" r="1.8" fill="currentColor" />
+</svg>"""
+
+
 CONTRAST_NAMES = {
     "v->w": "V becomes W", "w->v": "W becomes V", "th->t": "TH becomes T",
     "dh->d": "TH becomes D", "z->s": "Z becomes S", "zh->j": "ZH becomes SH",
@@ -113,12 +163,14 @@ def _grammar_html(habits: list[dict], name: str = "") -> str:
         f = _g.GrammarFinding(**{k: v for k, v in h.items() if k != "times"})
         action = html.escape(f.instruction) if f.instruction else ""
         times = int(h.get("times", 1))
-        tag = html.escape(h["kind"])
+        # The one word he should be able to say back when asked why it is wrong.
+        label = html.escape((h.get("label") or h["kind"]).upper())
+        tag = "" if (h.get("label") or h["kind"]).lower() == h["kind"].lower() else html.escape(h["kind"])
         if times > 1:
-            tag += f" &middot; {times} times this month"
+            tag += (" &middot; " if tag else "") + f"{times} times this month"
         return (
             f'<div class="item"><div class="num">{number}</div><div class="body">'
-            f'<div class="tagline">{tag}</div>'
+            f'<div class="tagline"><span class="label">{label}</span>{tag}</div>'
             f'<div class="said">You {"said" if spoken else "wrote"} '
             f'&ldquo;<b>{html.escape(h["said"])}</b>&rdquo;</div>'
             f'<div class="say">Say &ldquo;<b>{html.escape(h["should_be"])}</b>&rdquo;'
@@ -156,6 +208,35 @@ def _grammar_html(habits: list[dict], name: str = "") -> str:
     return "".join(out)
 
 
+def _week_html(day: date) -> str:
+    """Seven days against the seven before. Silent when there is nothing to say."""
+    from . import progress
+
+    try:
+        summary = progress.week(day)
+    except Exception:  # noqa: BLE001  a progress strip must never cost a report
+        return ""
+    if not summary or not summary.get("verdict"):
+        return ""
+    now = summary["this_week"]
+    extra = []
+    if summary.get("fixed"):
+        extra.append("Gone since last week: <b>" + ", ".join(
+            html.escape(w) for w in summary["fixed"]) + "</b>.")
+    if summary.get("persisting"):
+        extra.append("Still with you: <b>" + ", ".join(
+            html.escape(w) for w in summary["persisting"]) + "</b>.")
+    note = f'<div class="week-note">{" ".join(extra)}</div>' if extra else ""
+    return (
+        '<div class="week"><div class="week-head">Seven days</div>'
+        f'<div class="week-body">{html.escape(summary["verdict"])}</div>'
+        f'{note}'
+        f'<div class="week-foot">{now["found"]} corrections across {now["days"]} '
+        f'analysed day{"s" if now["days"] != 1 else ""}, {now["words"]:,} words of your own. '
+        'Only days this checker read are counted.</div></div>'
+    )
+
+
 def _provenance(analysis: dict) -> str:
     """Say in the report itself what left the machine. It is the honest place."""
     if analysis.get("grammar_engine") != "claude-cli":
@@ -189,7 +270,11 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
             continue
         first = examples[0]
         blocks = "".join(
-            f'<div class="ab"><div class="who"><div class="word">{html.escape(f.word)}'
+            '<div class="ab"><div class="who">'
+            + (f'<div class="heard">You said <b>{html.escape((_as_heard(f.word, f.contrast) or "").upper())}</b></div>'
+               f'<div class="word">The word is <b>{html.escape(f.word.upper())}</b>'
+               if _as_heard(f.word, f.contrast)
+               else f'<div class="word">{html.escape(f.word)}')
             + (f' <span class="ipa">{html.escape(f.ipa)}</span>' if f.ipa else "")
             + f'</div><div class="ctx">Transcript: {html.escape(f.sentence[:110])}</div>'
             + f'<div class="ctx">{"Wispr dictation" if "wispr-" in f.source else "Reading audio"} · phoneme model score {f.confidence:.0%} (not measured accuracy)</div></div>'
@@ -201,12 +286,11 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
         )
         rows.append(
             f'<div class="card"><div class="card-head"><div class="swap">'
-            f'<span class="bad">/{html.escape(first.said)}/</span>'
-            f'<span class="arrow">detected → reference</span>'
-            f'<span class="good">/{html.escape(first.should_be)}/</span>'
+            f'<span class="sound-name">{CONTRAST_NAMES.get(contrast, contrast)}</span>'
+            f'<span class="arrow">/{html.escape(first.said)}/ where the word wants '
+            f'/{html.escape(first.should_be)}/</span>'
             f'<span class="n">{len(items)}x &middot; {_sureness(bounds.get(contrast, 0.0))}</span></div>'
-            f'<div class="words">{CONTRAST_NAMES.get(contrast, contrast)}'
-            f' &middot; {html.escape(TIPS.get(contrast, ""))}</div></div>'
+            f'<div class="words">{html.escape(TIPS.get(contrast, ""))}</div></div>'
             f"{blocks}</div>"
         )
 
@@ -233,13 +317,19 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
             sentence += "…"
         source = "Wispr dictation" if "wispr-" in finding.source else "Reading audio"
         ipa = f' <span class="ipa">{html.escape(finding.ipa)}</span>' if finding.ipa else ""
+        heard = _as_heard(finding.word, finding.contrast)
+        headline = (f'<span class="bad">{html.escape(heard.upper())}</span>'
+                    '<span class="arrow"> heard; the word is </span>'
+                    f'<span class="good">{html.escape(finding.word.upper())}</span>'
+                    if heard else
+                    f'<span class="bad">/{html.escape(finding.said)}/</span>'
+                    '<span class="arrow"> heard; expected </span>'
+                    f'<span class="good">/{html.escape(finding.should_be)}/</span>')
         candidate_cards.append(
             '<div class="candidate-card">'
             '<div class="candidate-head"><div>'
-            f'<span class="bad">/{html.escape(finding.said)}/</span>'
-            '<span class="arrow"> heard; expected </span>'
-            f'<span class="good">/{html.escape(finding.should_be)}/</span>'
-            f'<div class="candidate-word">{html.escape(finding.word)}{ipa}</div>'
+            + headline
+            + f'<div class="candidate-word">{html.escape(finding.word)}{ipa}</div>'
             '</div><span class="candidate-tag">candidate · not confirmed</span></div>'
             f'<div class="words">{html.escape(CONTRAST_NAMES.get(finding.contrast, finding.contrast))}'
             f' · confidence {finding.confidence:.0%} · audio quality {finding.quality:.0%} · {source}</div>'
@@ -335,6 +425,8 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
             'Either the day was clean, or there was too little of it to read.'
             '</div></div></div>'
         ))
+        .replace("{{PORTRAIT}}", PORTRAIT)
+        .replace("{{WEEK}}", _week_html(day))
         .replace("{{PROVENANCE}}", _provenance(analysis or {}))
         .replace("{{REMARK}}", html.escape(remark))
     )
@@ -481,7 +573,9 @@ TEMPLATE = """<!doctype html><html><head><meta charset="utf-8">
 body{background:var(--paper);color:var(--ink);margin:0;padding:34px 20px 72px;
 font:16.5px/1.62 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
 .wrap{max-width:720px;margin:0 auto}
-.masthead{border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:3px}
+.masthead{border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:3px;
+display:flex;align-items:flex-end;gap:16px}
+.portrait{width:70px;height:84px;color:var(--ink);flex:none;margin-bottom:-2px}
 h1{font-size:2.15rem;margin:0;letter-spacing:.005em;font-weight:600}
 .rule-thin{border-bottom:1px solid var(--rule2);margin-bottom:20px;height:3px}
 .greet{font-size:1.06rem;color:var(--mark);margin:16px 0 2px;font-weight:600}
@@ -516,7 +610,14 @@ text-decoration-color:rgba(163,50,39,.55)}
 .say{font-size:1.14rem;color:var(--right);margin-top:4px}.say b{font-weight:700}
 .why{font-size:.9rem;color:var(--ink2);font-style:italic;margin-top:6px}
 .tagline{font:.64rem/1 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--muted);
-letter-spacing:.11em;text-transform:uppercase;margin:4px 0 7px}
+letter-spacing:.11em;text-transform:uppercase;margin:4px 0 8px}
+.label{font:700 .68rem/1 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--mark);
+background:var(--wash);border:1px solid #DCD5C2;padding:4px 8px;border-radius:2px;
+letter-spacing:.09em;margin-right:9px}
+.heard{font-size:1.06rem;color:var(--wrong);margin-bottom:2px}
+.heard b{font-weight:700;letter-spacing:.03em}
+.word b{color:var(--right);letter-spacing:.03em}
+.sound-name{font-size:1.15rem;font-weight:600}
 .ctx{font-size:.84rem;color:var(--muted);margin-top:8px;padding-left:12px;
 border-left:2px solid var(--rule);line-height:1.55}
 .action{display:inline-block;font:600 .7rem/1 -apple-system,BlinkMacSystemFont,sans-serif;
@@ -551,6 +652,14 @@ border-radius:999px;padding:5px 9px;white-space:nowrap;text-transform:uppercase;
 .candidate-transcript{font-size:.86rem;color:var(--ink2);line-height:1.6;border-top:1px solid #E7DCBF;
 border-bottom:1px solid #E7DCBF;padding:11px 0;margin-top:11px}
 .candidate-foot{font:.74rem/1.5 -apple-system,sans-serif;color:var(--muted);margin-top:10px}
+.week{border:1px solid var(--rule2);border-left:3px solid var(--mark);background:var(--card);
+padding:15px 18px;margin:0 0 26px;break-inside:avoid}
+.week-head{font:700 .64rem/1 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--mark);
+letter-spacing:.14em;text-transform:uppercase;margin-bottom:7px}
+.week-body{font-size:1.02rem;line-height:1.55}
+.week-note{font-size:.88rem;color:var(--ink2);margin-top:7px}
+.week-note b{color:var(--mark);font-weight:600}
+.week-foot{font:.72rem/1.5 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--muted);margin-top:8px}
 .tribute{font-size:.76rem;color:var(--muted);line-height:1.6;margin-top:30px;padding-top:14px;
 border-top:1px solid var(--rule)}
 @media(max-width:620px){.ab{grid-template-columns:1fr}.buttons{justify-content:flex-start}
@@ -562,11 +671,12 @@ border-top:1px solid var(--rule)}
 .pb{display:none}body{padding:0 0 12px;font-size:11.5pt}.wrap{max-width:none}
 .sect{break-after:avoid}.card,.item{break-inside:avoid}}
 </style></head><body><div class="wrap">
-<div class="masthead"><h1>Mr Tharoor</h1></div><div class="rule-thin"></div>
+<div class="masthead">{{PORTRAIT}}<h1>Mr Tharoor</h1></div><div class="rule-thin"></div>
 <div class="sub">{{DATE}} &middot; a lesson made from what you said and what you wrote</div>
 <div class="greet">{{GREETING}}</div>
 <div class="remark">{{REMARK}}</div>
 {{STATS}}
+{{WEEK}}
 {{GRAMMAR}}
 <h2 class="sect">Pronunciation</h2>
 {{CARDS}}

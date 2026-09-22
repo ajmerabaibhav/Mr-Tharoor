@@ -82,3 +82,44 @@ def test_llm_is_optional(monkeypatch):
     monkeypatch.setenv("MR_THAROOR_NO_LLM", "1")
     assert not grammar.llm_available()
     assert grammar.llm_check(ITEMS) == []  # and nothing is spawned
+
+
+def test_label_is_one_word_and_verified():
+    out = grammar.parse_llm(_reply(
+        {"i": 1, "said": "you have gave", "should_be": "you have given", "kind": "verb",
+         "label": "Participle form", "why": "past participle after have"},
+    ), ITEMS)
+    assert out[0].label == "participle"  # one word, lowercased
+
+
+def test_said_as_letters_not_ipa():
+    """A printed page cannot play a sound, so it must show the word misspelt."""
+    from mr_tharoor import report
+
+    assert report._as_heard("version", "v->w") == "wersion"
+    assert report._as_heard("that", "th->t") == "tat"
+    assert report._as_heard("word", "t->retroflex") is None  # letters cannot show it
+    assert report._as_heard("cat", "v->w") is None  # no v to swap
+
+
+def test_week_refuses_to_invent_progress(tmp_path, monkeypatch):
+    """Days the old checker looked at must never be compared with the new one."""
+    import json as _json
+    from datetime import date, timedelta
+
+    from mr_tharoor import config, progress
+
+    today = date(2026, 9, 22)
+    for back, engine, found in ((1, "claude-cli", 6), (9, "local-rules", 0)):
+        day = today - timedelta(days=back)
+        (config.REPORTS_DIR / f"{day}-analysis.json").write_text(
+            _json.dumps({"grammar_engine": engine, "version": 2}))
+        (config.REPORTS_DIR / f"{day}-grammar-raw.json").write_text(
+            _json.dumps([{"label": "agreement"}] * found))
+    monkeypatch.setattr(progress, "_word_counts", lambda days: {d: 500 for d in days})
+
+    summary = progress.week(today)
+    assert summary["this_week"]["found"] == 6
+    assert summary["last_week"]["days"] == 0  # the local-rules day is not comparable
+    assert "Next week can be compared" in summary["verdict"]
+    assert summary["change"] is None

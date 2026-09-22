@@ -9,3 +9,5 @@ logs/
 .pytest_cache/
 *.DS_Store
 *.egg-info/
+
+.claude/settings.local.json

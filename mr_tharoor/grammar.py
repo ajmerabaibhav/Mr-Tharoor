@@ -95,6 +95,7 @@ class GrammarFinding:
     basis: str = "legacy"  # rule | user_edit | llm; old rewrite-only findings stay archived
     why: str = ""  # the rule, in the checker's own words
     mode: str = "spoken"  # spoken | typed -- which half of the day this came from
+    label: str = ""  # ONE word naming the rule, so you can say why it is wrong
 
     @property
     def headline(self) -> str:
@@ -319,7 +320,9 @@ Mark ONLY errors a grammar teacher would mark: subject-verb agreement, tense, ar
 Do NOT mark: punctuation, capitalisation, spelling, filler words (um, yeah, so, like), repetition or self-correction, incomplete sentences, style, wordiness, register, or anything that is merely a different way of saying the same thing. {caveat}
 
 For each real error output ONE line of JSON and nothing else:
-{{"i": <item number>, "said": "<the exact 2-8 word span, copied verbatim from the item>", "should_be": "<the corrected span>", "kind": "<article|preposition|number|verb|tense|word-order|pronoun|phrase>", "why": "<max 12 words, the rule>"}}
+{{"i": <item number>, "said": "<the exact 2-8 word span, copied verbatim from the item>", "should_be": "<the corrected span>", "kind": "<article|preposition|number|verb|tense|word-order|pronoun|phrase>", "label": "<ONE lowercase word naming the rule, the word a teacher would say: agreement, article, participle, plural, preposition, tense, order, pronoun, countable, idiom, possessive, comparative, infinitive, gerund>", "why": "<max 12 words, the rule>"}}
+
+The label matters: it is the one word the speaker should be able to say back when asked why the correction is right.
 
 No preamble, no markdown fences, no summary, no repeated corrections. If an item has no error, output nothing for it. Be strict: when in doubt, leave it out.
 
@@ -436,6 +439,7 @@ def parse_llm(reply: str, items: list[tuple[str, str]], mode: str = "spoken") ->
             index = int(row["i"]) - 1
             said, should_be = str(row["said"]).strip(), str(row["should_be"]).strip()
             kind, why = str(row.get("kind", "")).strip(), str(row.get("why", "")).strip()
+            label = str(row.get("label", "")).strip().lower().split()[0][:18] if row.get("label") else ""
         except (KeyError, TypeError, ValueError):
             continue
         if not (0 <= index < len(items)) or not said or not should_be:
@@ -455,7 +459,7 @@ def parse_llm(reply: str, items: list[tuple[str, str]], mode: str = "spoken") ->
         out.append(GrammarFinding(
             kind=kind if kind in KINDS else "phrase", said=said, should_be=should_be,
             context=_around(text, said), source=source, change=change, word=word,
-            basis="llm", why=why[:90], mode=mode,
+            basis="llm", why=why[:90], mode=mode, label=label,
         ))
     return out
 

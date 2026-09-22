@@ -1,5 +1,32 @@
 # Mr Tharoor
 
+## One word for the rule, the sound in letters, and a week's arithmetic — 22 September 2026
+
+Four changes, all of them about the page teaching rather than reporting.
+
+**A one-word reason on every correction.** *AGREEMENT*, *PARTICIPLE*, *ARTICLE*,
+*COUNTABLE*. The full rule is still underneath in a line, but the word is the
+thing to remember: it is what you should be able to say back when someone asks
+why the correction is right.
+
+**Pronunciation in letters, not symbols.** `/v/ → /w/` teaches nobody anything
+on a printed page. It now reads *You said **WERSION** / The word is **VERSION***,
+with the misspelling derived from the sound that actually came out. Where
+letters cannot show the difference — a retroflex T is still a T — it says so
+rather than inventing a spelling.
+
+**Seven days, honestly.** A strip at the top compares corrections per thousand
+words against the previous seven days. Three rules keep it from lying: only
+days the current checker read are counted (the old rules found nothing, and
+comparing against that would show a collapse that never happened), the count is
+always divided by how much you actually produced, and a difference smaller than
+twice the combined standard error is reported as no difference at all.
+
+**A portrait.** Mr Tharoor is drawn in inline SVG — a fictional professor,
+spectacles and a band collar, not a likeness of anyone living — so the page
+stays one self-contained file that prints in ink.
+
+
 ## The report is a lesson now, and the name is one name — 22 September 2026
 
 The morning page was a dark dashboard: four numbers, then cards. It is now a

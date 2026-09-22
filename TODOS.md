@@ -1,5 +1,24 @@
 # What is not built, and what is known broken
 
+## Teaching, not reporting — 22 September 2026
+
+- `label`: the checker returns one lowercase word naming the rule, verified the
+  same way as everything else it returns, shown as the badge on each correction.
+- `report._as_heard`: the flagged word respelled with the sound that came out,
+  so the PDF can say WERSION against VERSION. Returns None for contrasts letters
+  cannot show (both retroflex pairs), and the card falls back to IPA there.
+- `progress.py`: corrections per thousand words, this week against last.
+  Guards: engine-matched days only, rate not count, and a crude 2-sigma test
+  that reports anything smaller as no difference. Word counts are computed from
+  the sources on demand, so no new state is stored and past weeks work.
+- Inline SVG portrait in the masthead.
+
+Ceilings: with a few thousand words a week the noise band is wide, so early
+weeks will honestly say nothing has been proved. The respelling is an
+approximation of the produced sound, not a transcription — the recording
+remains the ground truth, and the report says so.
+
+
 ## Report redesign and one name — 22 September 2026
 
 - The report template is a light, serif lesson sheet, print first. Numbered
