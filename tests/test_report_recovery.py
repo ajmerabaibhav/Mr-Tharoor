@@ -2,7 +2,7 @@
 
 import argparse
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -120,15 +120,21 @@ def test_open_report_falls_back_to_html_when_pdf_is_missing(monkeypatch):
 
 
 def test_pending_repairs_missing_export_without_reanalysing(monkeypatch):
-    for back in range(1, 4):
+    # Today is seeded as well. After 23:30 the pending job includes the current
+    # day, so a test that only seeded the three previous ones failed every night
+    # between 23:30 and midnight -- on the clock, not on the code.
+    for back in range(0, 4):
         day = date.today() - timedelta(days=back)
         daily.save([], day)
+        finished = (datetime.combine(day, time(23, 30)) if back == 0 else datetime.now())
         config.write_json_atomically(config.REPORTS_DIR / f"{day}-analysis.json",
-                                     {"version": 2, "completed_at": datetime.now().isoformat()})
+                                     {"version": 2, "completed_at": finished.isoformat()})
     fake_browser(monkeypatch)
     monkeypatch.setattr(cli, "cmd_analyse_day", lambda args: pytest.fail("decoded completed audio again"))
     assert cli.cmd_analyse_pending(argparse.Namespace(force=True)) == 0
-    assert len(list(config.REPORTS_DIR.glob("*.pdf"))) == 3
+    for back in range(1, 4):
+        day = date.today() - timedelta(days=back)
+        assert (config.REPORTS_DIR / f"{day}.pdf").exists(), f"no PDF repaired for {day}"
 
 
 def test_partial_day_and_processing_counts_are_visible():
