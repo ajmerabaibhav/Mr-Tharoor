@@ -73,27 +73,51 @@ def _as_heard(word: str, contrast: str) -> str | None:
 # self-contained file that works offline and prints in ink. He is a fictional
 # professor -- round spectacles, swept hair, a band collar -- and deliberately
 # not a likeness of any living person. See the tribute note at the foot.
-PORTRAIT = """<svg class="portrait" viewBox="0 0 108 136" role="img" aria-label="Mr Tharoor">
-<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+# The mascot, drawn rather than fetched: inline SVG keeps the report one
+# self-contained file that works offline and prints in ink. He is a fictional
+# professor -- swept hair going grey, round spectacles, a band-collar
+# waistcoat -- and deliberately not a likeness of any living person. See the
+# tribute note at the foot of the page.
+#
+# The medallion is not decoration. The drawing is ink on nothing, so on a dark
+# background it simply disappears; the filled disc gives it its own paper
+# wherever it is put, including a README on GitHub at night.
+_FIGURE = """
 <path d="M11 136c3-26 15-37 30-41l7-14h14l7 14c15 4 27 15 30 41" />
 <path d="M46 81c5 7 17 7 22 0" />
 <path d="M45 84l3 12M67 84l-3 12" />
 <path d="M49 92l6 12 6-12" />
 <path d="M48 96l-4 40M64 96l4 40" />
-<circle cx="56" cy="112" r="1.6" fill="currentColor" /><circle cx="56" cy="124" r="1.6" fill="currentColor" />
+<circle cx="56" cy="112" r="1.6" fill="{ink}" /><circle cx="56" cy="124" r="1.6" fill="{ink}" />
 <path d="M70 101l5-4 5 3-4 3z" />
-<ellipse cx="54" cy="46" rx="21" ry="24" />
-<path d="M33 44c-2-21 9-31 21-31s23 10 21 31c-2-13-9-20-21-20s-19 7-21 20z" fill="currentColor" stroke="none" />
-<path d="M38 30c5-4 12-6 19-5M71 36c3 3 4 8 3 12" stroke="var(--paper)" stroke-width="1.8" />
+<ellipse cx="54" cy="46" rx="21" ry="24" fill="{paper}" />
+<path d="M33 44c-2-21 9-31 21-31s23 10 21 31c-2-13-9-20-21-20s-19 7-21 20z" fill="{ink}" stroke="none" />
+<path d="M38 30c5-4 12-6 19-5M71 36c3 3 4 8 3 12" stroke="{paper}" stroke-width="1.8" />
 <path d="M33 46c-3 0-5 3-4 6s3 5 6 4M75 46c3 0 5 3 4 6s-3 5-6 4" />
-<circle cx="45" cy="48" r="8.5" /><circle cx="63" cy="48" r="8.5" />
+<circle cx="45" cy="48" r="8.5" fill="{paper}" /><circle cx="63" cy="48" r="8.5" fill="{paper}" />
 <path d="M53.5 48h1M36.5 46l-3-2M71.5 46l3-2" />
 <path d="M39 36c3-2 7-2 9 1M60 37c2-3 6-3 9-1" />
 <path d="M54 48c0 5-1 7-3 9 2 1 4 1 6 0" />
 <path d="M44 62c5 6 15 6 20 0" stroke-width="2.4" />
 <path d="M41 58c-1 4 0 6 2 8M67 58c1 4 0 6-2 8" />
-<circle cx="45" cy="48" r="1.7" fill="currentColor" /><circle cx="63" cy="48" r="1.7" fill="currentColor" />
-</g></svg>"""
+<circle cx="45" cy="48" r="1.7" fill="{ink}" /><circle cx="63" cy="48" r="1.7" fill="{ink}" />
+"""
+
+_MEDALLION = """<svg {attrs}viewBox="0 0 124 124" role="img" aria-label="Mr Tharoor">
+<defs><clipPath id="{cid}"><circle cx="62" cy="62" r="58" /></clipPath></defs>
+<circle cx="62" cy="62" r="58" fill="{paper}" />
+<g clip-path="url(#{cid})" transform="translate(8 6)" fill="none" stroke="{ink}"
+   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{figure}</g>
+<circle cx="62" cy="62" r="58" fill="none" stroke="{ink}" stroke-width="2.2" />
+</svg>"""
+
+
+def _portrait(ink: str, paper: str, cid: str, attrs: str = "") -> str:
+    return _MEDALLION.format(figure=_FIGURE.format(ink=ink, paper=paper),
+                             ink=ink, paper=paper, cid=cid, attrs=attrs)
+
+
+PORTRAIT = _portrait("currentColor", "var(--paper)", "tharoor-face", 'class="portrait" ')
 
 
 CONTRAST_NAMES = {
@@ -253,6 +277,9 @@ def _week_html(day: date) -> str:
     )
 
 
+CANDIDATE_LIMIT = 8  # how many unconfirmed sounds the page will show
+
+
 def _provenance(analysis: dict) -> str:
     """Say in the report itself what left the machine. It is the honest place."""
     if analysis.get("grammar_engine") != "claude-cli":
@@ -327,7 +354,7 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
             "</div></div></div>"
         )
     candidate_cards = []
-    for finding in candidates[:8]:
+    for finding in candidates[:CANDIDATE_LIMIT]:
         sentence = html.escape(finding.sentence[:360])
         if len(finding.sentence) > 360:
             sentence += "…"
@@ -350,8 +377,12 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
             f'<div class="words">{html.escape(CONTRAST_NAMES.get(finding.contrast, finding.contrast))}'
             f' · confidence {finding.confidence:.0%} · audio quality {finding.quality:.0%} · {source}</div>'
             f'<div class="candidate-transcript">“{sentence}”</div>'
-            '<div class="candidate-foot">A single or low-frequency signal is shown for review; '
-            'listen to the clip in the HTML report before practising.</div>'
+            + '<div class="buttons">'
+            + _audio_tag(finding.clip_path, "▶ You", "you")
+            + _audio_tag(finding.correct_path, "▶ Said properly", "right")
+            + '</div>'
+            + '<div class="candidate-foot">Your own voice against a human recording. '
+            'The evidence does not yet call this a habit, so listen and judge it yourself.</div>'
             '</div>'
         )
     candidate_html = (
@@ -590,8 +621,8 @@ body{background:var(--paper);color:var(--ink);margin:0;padding:34px 20px 72px;
 font:16.5px/1.62 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
 .wrap{max-width:720px;margin:0 auto}
 .masthead{border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:3px;
-display:flex;align-items:flex-end;gap:16px}
-.portrait{width:70px;height:84px;color:var(--ink);flex:none;margin-bottom:-2px}
+display:flex;align-items:center;gap:18px}
+.portrait{width:76px;height:76px;color:var(--ink);flex:none;margin-bottom:2px}
 h1{font-size:2.15rem;margin:0;letter-spacing:.005em;font-weight:600}
 .rule-thin{border-bottom:1px solid var(--rule2);margin-bottom:20px;height:3px}
 .greet{font-size:1.06rem;color:var(--mark);margin:16px 0 2px;font-weight:600}
@@ -668,6 +699,7 @@ border-radius:999px;padding:5px 9px;white-space:nowrap;text-transform:uppercase;
 .candidate-transcript{font-size:.86rem;color:var(--ink2);line-height:1.6;border-top:1px solid #E7DCBF;
 border-bottom:1px solid #E7DCBF;padding:11px 0;margin-top:11px}
 .candidate-foot{font:.74rem/1.5 -apple-system,sans-serif;color:var(--muted);margin-top:10px}
+.candidate-card .buttons{justify-content:flex-start;margin-top:12px}
 .week{border:1px solid var(--rule2);border-left:3px solid var(--mark);background:var(--card);
 padding:15px 18px;margin:0 0 26px;break-inside:avoid}
 .week-head{font:700 .64rem/1 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--mark);

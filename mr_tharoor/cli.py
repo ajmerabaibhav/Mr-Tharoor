@@ -665,7 +665,13 @@ def _analyse_day(args: argparse.Namespace) -> int:
 
         streaks.record_day(when, tallies)
         selected = [f for items in daily.group(findings, when).values() for f in items]
-        daily.attach_pronunciations(selected)
+        # The report also prints up to eight unconfirmed candidates, and on a
+        # quiet day those are the ONLY thing on the page. Fetching audio for
+        # the confirmed list alone left every play button on that section dead,
+        # which is the one thing the pronunciation half exists to do.
+        confirmed = {id(f) for f in selected}
+        shown = [f for f in findings if id(f) not in confirmed][:report.CANDIDATE_LIMIT]
+        daily.attach_pronunciations(selected + shown)
         daily.save(findings, when)
         # Raw corrections are kept per day; the report's habits are counted
         # over the last week, because one day rarely repeats a phrase twice
