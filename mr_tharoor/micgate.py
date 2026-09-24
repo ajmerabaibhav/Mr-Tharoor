@@ -214,7 +214,7 @@ def _is_our_listener(pid: int) -> bool:
         return False
     import re
 
-    return bool(re.search(r"(?:^|[/\s])(?:roy|tharoor)\s+listen(?:\s|$)", command)
+    return bool(re.search(r"(?:^|[/\s])tharoor\s+listen(?:\s|$)", command)
                 or "mr_tharoor.cli listen" in command)
 
 

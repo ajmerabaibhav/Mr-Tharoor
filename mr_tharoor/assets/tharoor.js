@@ -49,7 +49,7 @@
   var MOUTH_OPEN = "....smmmmmmsd...";
   var MOUTH_WIDE = "....mmmmmmmmd...";
 
-  function Roy(canvas, scale) {
+  function Tharoor(canvas, scale) {
     this.ctx = canvas.getContext("2d");
     this.scale = scale || 6;
     canvas.width = 16 * this.scale;
@@ -65,12 +65,12 @@
     if (!this.reduced) this.timer = setInterval(this.tick, 160);
   }
 
-  Roy.prototype.tick = function () {
+  Tharoor.prototype.tick = function () {
     this.frame++;
     this.draw(this.frame);
   };
 
-  Roy.prototype.draw = function (frame) {
+  Tharoor.prototype.draw = function (frame) {
     var ctx = this.ctx, s = this.scale;
     ctx.clearRect(0, 0, 16 * s, 22 * s);
 
@@ -97,10 +97,10 @@
     }
   };
 
-  Roy.prototype.say = function (on) {
+  Tharoor.prototype.say = function (on) {
     this.talking = !!on;
     this.draw(this.frame);
   };
 
-  window.Roy = Roy;
+  window.Tharoor = Tharoor;
 })();

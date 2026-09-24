@@ -26,8 +26,6 @@ Homepage = "https://github.com/ajmerabaibhav/Mr-Tharoor"
 
 [project.scripts]
 tharoor = "mr_tharoor.cli:main"
-# `roy` stays as an undocumented alias so older habits and scripts still work.
-roy = "mr_tharoor.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -42,9 +42,7 @@ sentence it came from. The lesson comes before the pronunciation section, since
 that is where the material usually is, and the opening line says how many
 corrections there are and which half of the day they came from.
 
-`roy` is gone from every command, every table and every line of help: the
-command is `tharoor`. The `roy` entry point still exists, undocumented, so
-older habits and any script you wrote do not break.
+The command is `tharoor`.
 
 
 ## Grammar that finds things, and the typing half — 22 September 2026

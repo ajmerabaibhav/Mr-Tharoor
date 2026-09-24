@@ -70,11 +70,7 @@ remains the ground truth, and the report says so.
   utterance. `@page` margins set; cards and items do not break across pages.
 - The lesson section is placed above pronunciation, and the greeting names the
   count. Both halves are capped separately so speech cannot crowd out typing.
-- `roy` removed from all commands, help text, docs and tables; `tharoor` is the
-  only documented command. The `roy` console script is kept undocumented so
-  nothing that already exists breaks. Two references are deliberately left:
-  the process matcher in `micgate.py` (an old `roy listen` may still be
-  running) and the alias line in `pyproject.toml`.
+- `tharoor` is the only command.
 
 
 ## Grammar rewritten to actually find things — 22 September 2026
