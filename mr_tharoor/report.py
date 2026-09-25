@@ -171,6 +171,14 @@ def _audio_tag(path: str | None, label: str, css: str) -> str:
     )
 
 
+def _listen(day: date, anchor: str) -> str:
+    """The PDF cannot play audio, so it links to the page that can."""
+    page = (config.REPORTS_DIR / f"{day.isoformat()}.html").resolve().as_uri()
+    # `?listen` keeps Chrome's print from turning this into a jump inside the PDF.
+    return (f'<a class="listen" href="{page}?listen#{anchor}">'
+            '▶ Listen: you against the correct version (opens the interactive report)</a>')
+
+
 def _sureness(lower: float) -> str:
     """Plain words for a credible bound. A number nobody trusts teaches nothing."""
     if lower >= 0.15:
@@ -328,13 +336,13 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
             for f in examples
         )
         rows.append(
-            f'<div class="card"><div class="card-head"><div class="swap">'
+            f'<div class="card" id="s-{html.escape(contrast)}"><div class="card-head"><div class="swap">'
             f'<span class="sound-name">{html.escape(CONTRAST_NAMES.get(contrast, contrast))}</span>'
             f'<span class="arrow">/{html.escape(first.said)}/ where the word wants '
             f'/{html.escape(first.should_be)}/</span>'
             f'<span class="n">{len(items)}x &middot; {_sureness(bounds.get(contrast, 0.0))}</span></div>'
             f'<div class="words">{html.escape(TIPS.get(contrast, ""))}</div></div>'
-            f"{blocks}</div>"
+            f"{blocks}{_listen(day, f's-{contrast}')}</div>"
         )
 
     body = "".join(rows)
@@ -354,7 +362,7 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
             "</div></div></div>"
         )
     candidate_cards = []
-    for finding in candidates[:CANDIDATE_LIMIT]:
+    for number, finding in enumerate(candidates[:CANDIDATE_LIMIT]):
         sentence = html.escape(finding.sentence[:360])
         if len(finding.sentence) > 360:
             sentence += "…"
@@ -369,7 +377,7 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
                     '<span class="arrow"> heard; expected </span>'
                     f'<span class="good">/{html.escape(finding.should_be)}/</span>')
         candidate_cards.append(
-            '<div class="candidate-card">'
+            f'<div class="candidate-card" id="c-{number}">'
             '<div class="candidate-head"><div>'
             + headline
             + f'<div class="candidate-word">{html.escape(finding.word)}{ipa}</div>'
@@ -380,7 +388,7 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
             + '<div class="buttons">'
             + _audio_tag(finding.clip_path, "▶ You", "you")
             + _audio_tag(finding.correct_path, "▶ Said properly", "right")
-            + '</div>'
+            + '</div>' + _listen(day, f"c-{number}")
             + '<div class="candidate-foot">Your own voice against a human recording. '
             'The evidence does not yet call this a habit, so listen and judge it yourself.</div>'
             '</div>'
@@ -689,6 +697,7 @@ font:.8rem -apple-system,BlinkMacSystemFont,sans-serif;cursor:pointer;color:var(
 .pb.you{border-color:var(--wrong);color:var(--wrong)}
 .pb.right{border-color:var(--right);color:var(--right)}
 .pb[disabled]{opacity:.35;cursor:not-allowed}
+.listen{display:none}
 .candidate-card{background:var(--goldwash);border:1px solid #E2D2A8;border-left:3px solid var(--gold);
 padding:16px 18px;margin-bottom:12px;break-inside:avoid}
 .candidate-group{break-inside:avoid}
@@ -716,7 +725,7 @@ border-top:1px solid var(--rule)}
 .item{grid-template-columns:28px 1fr;gap:10px}}
 @page{margin:16mm 15mm}
 @media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.pb{display:none}body{padding:0 0 12px;font-size:11.5pt}.wrap{max-width:none}
+.pb{display:none}.listen{display:inline-block;margin-top:8px;color:var(--right);font-weight:600}body{padding:0 0 12px;font-size:11.5pt}.wrap{max-width:none}
 .sect{break-after:avoid}.card,.item{break-inside:avoid}}
 </style></head><body><div class="wrap">
 <div class="masthead">{{PORTRAIT}}<h1>Mr Tharoor</h1></div><div class="rule-thin"></div>
