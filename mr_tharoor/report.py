@@ -4,14 +4,8 @@ The page is deliberately one self-contained file. Audio is embedded rather
 than linked, so it keeps working when the clips are deleted three days later,
 and it can be sent to someone or kept forever without dragging a folder along.
 
-Three formats out of one template, all local:
-
-    HTML   the real one, because it is the only one that can play sound
-    PDF    headless Chromium, already on this machine
-    DOCX   textutil, which ships with macOS
-
-PDF and Word are for keeping and sharing. Neither can play a recording, so the
-morning job opens both the PDF in Preview and the interactive HTML review.
+HTML only. It is the one format that can play sound, and hearing your own
+voice is the point. Pages older than KEEP_DAYS are deleted each night.
 """
 
 from __future__ import annotations
@@ -19,29 +13,10 @@ from __future__ import annotations
 import base64
 import html
 import json
-import shutil
 import subprocess
-import tempfile
 from datetime import date, datetime
-from pathlib import Path
 
 from . import config, daily
-
-def _find_chromium() -> Path | None:
-    """Find a local headless browser without pinning one Playwright revision."""
-    cache = Path.home() / "Library" / "Caches" / "ms-playwright"
-    candidates = sorted(
-        cache.glob("chromium_headless_shell-*/chrome-headless-shell-mac-arm64/chrome-headless-shell"),
-        reverse=True,
-    )
-    candidates += [
-        Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-        Path("/Applications/Chromium.app/Contents/MacOS/Chromium"),
-    ]
-    return next((path for path in candidates if path.is_file() and path.stat().st_mode & 0o111), None)
-
-
-CHROMIUM = _find_chromium()
 
 # How a sound going wrong actually looks in letters. IPA teaches nobody
 # anything on a printed page; "you said WERSION, the word is VERSION" teaches
@@ -487,74 +462,42 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
     )
 
 
-def valid_pdf(path: Path) -> bool:
-    try:
-        with path.open("rb") as stream:
-            return path.stat().st_size > 1000 and stream.read(5) == b"%PDF-"
-    except OSError:
-        return False
-
-
 def write(findings: list, day: date | None = None, grammar: list[dict] | None = None,
           analysis: dict | None = None) -> dict[str, str]:
-    """HTML always; PDF and Word when their tools are present."""
+    """The day's page, then clear out old ones."""
     day = day or date.today()
     config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     html_path = config.REPORTS_DIR / f"{day.isoformat()}.html"
-    from . import log
-
-    logger = log.get("report")
     html_path.write_text(build_html(findings, day, grammar, analysis), encoding="utf-8")
-    out = {"html": str(html_path)}
+    prune()
+    return {"html": str(html_path)}
 
-    if CHROMIUM is not None:
-        pdf = html_path.with_suffix(".pdf")
-        # Chromium's macOS headless helper can fail before startup when the
-        # session cannot register its Mach rendezvous service. Single-process
-        # mode avoids that crash and still renders this local, self-contained
-        # page. Try the normal mode first, then the compatible fallback.
-        with tempfile.TemporaryDirectory(prefix=".pdf-", dir=config.REPORTS_DIR) as scratch:
-            temporary = Path(scratch) / pdf.name
-            base = [str(CHROMIUM), "--headless", "--no-sandbox", "--disable-gpu",
-                    "--disable-dev-shm-usage", "--no-pdf-header-footer",
-                    f"--user-data-dir={Path(scratch) / 'profile'}",
-                    f"--print-to-pdf={temporary}", html_path.resolve().as_uri()]
-            for extra in ([], ["--single-process"]):
-                temporary.unlink(missing_ok=True)
-                try:
-                    result = subprocess.run(base[:1] + extra + base[1:],
-                                            capture_output=True, timeout=120)
-                except (OSError, subprocess.TimeoutExpired) as exc:
-                    logger.warning("PDF export attempt failed: %s", type(exc).__name__)
-                    continue
-                if result.returncode == 0 and valid_pdf(temporary):
-                    temporary.replace(pdf)
-                    out["pdf"] = str(pdf)
-                    break
-        if "pdf" not in out:
-            logger.warning("PDF export failed for %s; keeping any previous PDF and retrying later", day)
-    else:
-        logger.warning("PDF export unavailable: install Google Chrome or a Playwright Chromium browser")
 
-    docx = html_path.with_suffix(".docx")
-    if shutil.which("textutil"):
+KEEP_DAYS = 4
+
+
+def prune(keep_days: int = KEEP_DAYS, today: date | None = None) -> int:
+    """Delete report pages older than keep_days. The small JSON files stay:
+    the week strip counts from them. Returns how many files went."""
+    cutoff = (today or date.today()).toordinal() - keep_days
+    gone = 0
+    for path in config.REPORTS_DIR.glob("????-??-??.*"):
+        if path.suffix not in (".html", ".pdf", ".docx"):
+            continue
         try:
-            result = subprocess.run(
-                ["textutil", "-convert", "docx", str(html_path), "-output", str(docx)],
-                capture_output=True, timeout=30,
-            )
-            if result.returncode == 0 and docx.exists():
-                out["docx"] = str(docx)
-        except (OSError, subprocess.TimeoutExpired):
-            logger.warning("Optional Word export failed for %s", day)
-    return out
+            old = date.fromisoformat(path.stem).toordinal() < cutoff
+        except ValueError:
+            continue
+        if old:
+            path.unlink(missing_ok=True)
+            gone += 1
+    return gone
 
 
 def repair_exports(day: date, analysis: dict) -> bool:
-    """Retry a missing/failed export from saved results without decoding audio again."""
+    """Rebuild a missing page from saved results without decoding audio again."""
     html_path = config.REPORTS_DIR / f"{day}.html"
-    if (html_path.exists() and valid_pdf(html_path.with_suffix(".pdf"))
-            and "pdf" in analysis.get("outputs", ["pdf"])):
+    if html_path.exists():
         return True
     if not (config.REPORTS_DIR / f"{day}.json").exists():
         return False
@@ -563,41 +506,21 @@ def repair_exports(day: date, analysis: dict) -> bool:
     written = write(daily.load(day), day, grammar=grammar, analysis=analysis)
     analysis["outputs"] = sorted(written)
     config.write_json_atomically(config.REPORTS_DIR / f"{day}-analysis.json", analysis)
-    return "pdf" in written
+    return html_path.exists()
 
 
 def open_report(day: date | None = None) -> str | None:
-    """Open the interactive review, then put its PDF visibly in front.
-
-    `open` returning zero only means LaunchServices accepted the request.  An
-    HTML tab can land behind an existing browser window and look as though the
-    morning job did nothing.  Preview is a distinct, visible destination and
-    is also the durable report the user expects to receive each morning.
-    """
+    """Open the day's page in the browser."""
     day = day or date.today()
     html_path = config.REPORTS_DIR / f"{day.isoformat()}.html"
     if not html_path.exists():
         return None
-
-    opened_html = False
     try:
-        opened_html = subprocess.run(
-            ["open", str(html_path)], capture_output=True
-        ).returncode == 0
+        if subprocess.run(["open", str(html_path)], capture_output=True).returncode == 0:
+            return str(html_path)
     except OSError:
         pass
-
-    pdf_path = html_path.with_suffix(".pdf")
-    if valid_pdf(pdf_path):
-        try:
-            result = subprocess.run(
-                ["open", "-a", "Preview", str(pdf_path)], capture_output=True
-            )
-            if result.returncode == 0:
-                return str(pdf_path)
-        except OSError:
-            pass
-    return str(html_path) if opened_html else None
+    return None
 
 
 def latest_day(before: date | None = None) -> date | None:

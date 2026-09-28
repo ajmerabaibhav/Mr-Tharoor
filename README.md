@@ -11,7 +11,7 @@
 ---
 
 He reads what you dictate and what you type. He marks the grammar a teacher
-would mark, hears the sounds you get wrong, and at 08:30 a PDF opens on your
+would mark, hears the sounds you get wrong, and at 08:30 a page opens on your
 desk: what you said, what to say instead, and the one word that tells you why.
 
 macOS. Your audio never leaves the laptop.

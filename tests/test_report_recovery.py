@@ -48,75 +48,28 @@ def test_install_command_returns_failure(monkeypatch):
     assert cli.cmd_install(argparse.Namespace(remove=False, status=False, dry_run=False)) == 1
 
 
-def fake_browser(monkeypatch, fail=False):
+def test_report_is_html_only_and_prunes_pages_older_than_four_days(monkeypatch):
     monkeypatch.setattr(config, "user_name", lambda: "Test")
-    monkeypatch.setattr(report, "CHROMIUM", Path("/fake/browser"))
-    monkeypatch.setattr(report.shutil, "which", lambda name: None)
-    calls = []
-
-    def run(args, **kwargs):
-        calls.append(args)
-        if fail:
-            return SimpleNamespace(returncode=1)
-        target = next(arg.split("=", 1)[1] for arg in args if arg.startswith("--print-to-pdf="))
-        Path(target).write_bytes(b"%PDF-1.4\n" + b"x" * 1200)
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(report.subprocess, "run", run)
-    return calls
+    today = date.today()
+    old, kept = today - timedelta(days=5), today - timedelta(days=4)
+    for day in (old, kept):
+        for ext in (".html", ".pdf", ".docx", ".json"):
+            (config.REPORTS_DIR / f"{day}{ext}").write_text("x")
+    assert report.write([], today) == {"html": str(config.REPORTS_DIR / f"{today}.html")}
+    assert not any((config.REPORTS_DIR / f"{old}{ext}").exists() for ext in (".html", ".pdf", ".docx"))
+    assert (config.REPORTS_DIR / f"{old}.json").exists(), "the week strip needs the JSON"
+    assert (config.REPORTS_DIR / f"{kept}.html").exists()
 
 
-def test_failed_export_preserves_previous_pdf(monkeypatch):
-    day = date.today()
-    path = config.REPORTS_DIR / f"{day}.pdf"
-    path.write_bytes(b"%PDF-1.4\n" + b"previous" * 200)
-    before = path.read_bytes()
-    calls = fake_browser(monkeypatch, fail=True)
-    output = report.write([], day)
-    assert "pdf" not in output
-    assert path.read_bytes() == before
-    assert len(calls) == 2
-    assert "--single-process" in calls[1]
-
-
-def test_pdf_repair_uses_saved_results_and_updates_status(monkeypatch):
-    day = date.today() - timedelta(days=1)
-    daily.save([], day)
-    metadata = {"version": 2, "completed_at": datetime.now().isoformat(), "outputs": ["html"]}
-    fake_browser(monkeypatch)
-    assert report.repair_exports(day, metadata)
-    assert report.valid_pdf(config.REPORTS_DIR / f"{day}.pdf")
-    assert "pdf" in json.loads((config.REPORTS_DIR / f"{day}-analysis.json").read_text())["outputs"]
-
-
-def test_open_report_puts_pdf_in_preview_after_interactive_review(monkeypatch):
-    day = date.today() - timedelta(days=1)
-    html_path = config.REPORTS_DIR / f"{day}.html"
-    pdf_path = html_path.with_suffix(".pdf")
-    html_path.write_text("report")
-    pdf_path.write_bytes(b"%PDF-1.4\n" + b"x" * 1200)
-    calls = []
-
-    def run(args, **kwargs):
-        calls.append(args)
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(report.subprocess, "run", run)
-    assert report.open_report(day) == str(pdf_path)
-    assert calls == [
-        ["open", str(html_path)],
-        ["open", "-a", "Preview", str(pdf_path)],
-    ]
-
-
-def test_open_report_falls_back_to_html_when_pdf_is_missing(monkeypatch):
+def test_open_report_opens_the_page(monkeypatch):
     day = date.today() - timedelta(days=1)
     html_path = config.REPORTS_DIR / f"{day}.html"
     html_path.write_text("report")
-    monkeypatch.setattr(
-        report.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0)
-    )
+    calls = []
+    monkeypatch.setattr(report.subprocess, "run",
+                        lambda args, **kwargs: calls.append(args) or SimpleNamespace(returncode=0))
     assert report.open_report(day) == str(html_path)
+    assert calls == [["open", str(html_path)]]
 
 
 def test_pending_repairs_missing_export_without_reanalysing(monkeypatch):
@@ -129,12 +82,14 @@ def test_pending_repairs_missing_export_without_reanalysing(monkeypatch):
         finished = (datetime.combine(day, time(23, 30)) if back == 0 else datetime.now())
         config.write_json_atomically(config.REPORTS_DIR / f"{day}-analysis.json",
                                      {"version": 2, "completed_at": finished.isoformat()})
-    fake_browser(monkeypatch)
+    monkeypatch.setattr(config, "user_name", lambda: "Test")
+    for back in range(1, 4):
+        (config.REPORTS_DIR / f"{date.today() - timedelta(days=back)}.html").unlink(missing_ok=True)
     monkeypatch.setattr(cli, "cmd_analyse_day", lambda args: pytest.fail("decoded completed audio again"))
     assert cli.cmd_analyse_pending(argparse.Namespace(force=True)) == 0
     for back in range(1, 4):
         day = date.today() - timedelta(days=back)
-        assert (config.REPORTS_DIR / f"{day}.pdf").exists(), f"no PDF repaired for {day}"
+        assert (config.REPORTS_DIR / f"{day}.html").exists(), f"no page rebuilt for {day}"
 
 
 def test_partial_day_and_processing_counts_are_visible():

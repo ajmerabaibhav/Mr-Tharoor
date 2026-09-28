@@ -741,8 +741,6 @@ def _analyse_day(args: argparse.Namespace) -> int:
           f"({len(grammar_rows)} habits), {added} new reminder cards")
     for kind, path in written.items():
         print(f"  {kind}: {path}")
-    if "pdf" not in written:
-        print("  PDF export is incomplete. The next scheduled check will retry from saved results.")
     return 0
 
 
@@ -775,7 +773,7 @@ def cmd_analyse_pending(args: argparse.Namespace) -> int:
                             return 1
                         if not report.repair_exports(day, completed):
                             failed = True
-                            print(f"  {day}: PDF still unavailable; will retry at the next check.")
+                            print(f"  {day}: report page still missing; will retry at the next check.")
                     continue
             except (ValueError, TypeError, KeyError):
                 pass
@@ -829,9 +827,7 @@ def _morning(args: argparse.Namespace) -> int:
         name = config.user_name()
         thrown = log.too_far(day)
         if path:
-            delivered = "The PDF report is open in Preview."
-            if not path.endswith(".pdf"):
-                delivered = "The interactive report is open in your browser."
+            delivered = "The report is open in your browser."
             body = (
                 f"{sounds} sound{'s' if sounds != 1 else ''} and "
                 f"{len(habits)} phrase{'s' if len(habits) != 1 else ''} from {day:%A}. "

@@ -390,7 +390,10 @@ def _run_claude(prompt: str) -> str:
         env=_environment(),
     )
     if result.returncode != 0:
-        raise RuntimeError((result.stderr or "claude exited non-zero").strip()[:200])
+        # The tail, not the head: the CLI prints settings warnings first, and
+        # "Not logged in" hid behind one for two nights.
+        raise RuntimeError(((result.stderr or "") + (result.stdout or "")).strip()[-300:]
+                           or "claude exited non-zero")
     return result.stdout
 
 
@@ -521,7 +524,11 @@ def llm_check(items: list[tuple[str, str]], mode: str = "spoken", *, logger=None
             items=listing,
         )
         try:
-            reply = _run_claude(prompt)
+            try:
+                reply = _run_claude(prompt)
+            except subprocess.TimeoutExpired:
+                # The Mac slept through the call (24 and 27 Sep). Awake now; once more.
+                reply = _run_claude(prompt)
         except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
             if logger:
                 logger.warning(f"grammar check failed ({mode}): {type(exc).__name__}: {exc}")
