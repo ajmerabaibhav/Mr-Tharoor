@@ -3,7 +3,7 @@
 Two separate problems get confused constantly, so they are separated here.
 
   AUDIO is expensive. Re-analysing a week of recordings every night would
-  cook a MacBook Air. So audio lives for 3 days and then deletes itself.
+  cook a MacBook Air. So audio lives for config.KEEP_DAYS days and then deletes itself.
 
   COUNTS are free. A day's findings are a few hundred bytes of JSON. Keeping
   those forever costs nothing and no CPU at all, because nothing is ever
@@ -40,7 +40,8 @@ from __future__ import annotations
 import json
 from collections import Counter
 from dataclasses import asdict, dataclass, replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from . import config, evidence
 
@@ -67,8 +68,6 @@ FIXED_AFTER_CLEAN_DAYS = 3
 # A report longer than this is a report nobody opens.
 MAX_ITEMS = 6
 
-# Audio retention. Deliberately short: this is the CPU and disk knob.
-AUDIO_RETENTION_DAYS = 3
 
 
 @dataclass
@@ -121,7 +120,7 @@ def _load() -> dict:
         return json.loads(HISTORY_FILE.read_text())
     except json.JSONDecodeError:
         # This file is the only surviving record: the audio behind it is
-        # deleted after AUDIO_RETENTION_DAYS and can never be re-analysed.
+        # deleted after config.KEEP_DAYS and can never be re-analysed.
         # Overwriting it with {} would erase every week of history in
         # silence, so keep the bytes and make the loss visible.
         dead = config.quarantine(HISTORY_FILE)
@@ -383,7 +382,7 @@ def tonights_report(today: date | None = None) -> list[ReportRow]:
 
 
 def expired_audio_days(today: date | None = None) -> list[str]:
-    """Days whose raw audio should be deleted tonight. Counts are kept.
+    """Days whose data should be deleted tonight: day <= today - KEEP_DAYS.
 
     Reads the session folders on disk, not the tally file. Audio recorded on a
     day that was never analysed has no tally, and keying off tallies meant
@@ -391,7 +390,7 @@ def expired_audio_days(today: date | None = None) -> list[str]:
     the ones never cleaned up.
     """
     today = today or date.today()
-    cutoff = (today - timedelta(days=AUDIO_RETENTION_DAYS)).isoformat()
+    cutoff = (today - timedelta(days=config.KEEP_DAYS - 1)).isoformat()
     sessions = config.DATA_DIR / "sessions"
     days = {day for day in _load()}
     if sessions.exists():
@@ -399,28 +398,48 @@ def expired_audio_days(today: date | None = None) -> list[str]:
     return sorted(day for day in days if day < cutoff)
 
 
-def purge_expired_audio(today: date | None = None) -> tuple[int, float]:
-    """Delete audio past the retention window. Returns (files, megabytes).
+def purge_expired(today: date | None = None) -> tuple[int, float]:
+    """Delete everything stored about expired days. Returns (files, megabytes).
 
-    Deliberately independent of analysis. It used to run only at the end of a
-    successful nightly job, so a laptop that was on battery at 23:30 every
-    night -- the normal case -- never cleaned up at all, and an hour of speech
-    is 115 MB. Deleting files is cheap and safe; it runs regardless.
+    Audio, clips, report pages and their JSON, the day's tallies and any
+    reminder card made that day. Runs whether or not tonight's analysis does:
+    a laptop on battery at 23:30 must still forget on time.
     """
-    removed = 0
-    freed = 0.0
-    for day in expired_audio_days(today):
+    from . import remind
+
+    today = today or date.today()
+    days = expired_audio_days(today)
+    cutoff = (today - timedelta(days=config.KEEP_DAYS - 1)).isoformat()
+    files: list[Path] = []
+    for day in days:
         folder = config.DATA_DIR / "sessions" / day
-        if not folder.exists():
-            continue
-        for wav in folder.glob("*.wav"):
-            freed += wav.stat().st_size
-            wav.unlink()
-            removed += 1
+        files += list(folder.glob("*")) if folder.exists() else []
+        files += list(config.REPORTS_DIR.glob(f"{day}*"))
+    if config.REPORTS_DIR.exists():  # pages from days with no audio at all
+        files += [f for f in config.REPORTS_DIR.glob("????-??-??*") if f.name[:10] < cutoff]
+    if config.CLIPS_DIR.exists():
+        files += [f for f in config.CLIPS_DIR.iterdir()
+                  if datetime.fromtimestamp(f.stat().st_mtime).date().isoformat() < cutoff]
+    removed, freed = 0, 0.0
+    for f in set(files):
         try:
-            folder.rmdir()
+            freed += f.stat().st_size
+            f.unlink()
+            removed += 1
+        except (FileNotFoundError, IsADirectoryError):
+            pass
+    for day in days:
+        try:
+            (config.DATA_DIR / "sessions" / day).rmdir()
         except OSError:
-            pass  # something else is in there; leave it alone
+            pass
+    history = _load()
+    if any(day < cutoff for day in history):
+        _save({day: rows for day, rows in history.items() if day >= cutoff})
+    cards = remind._load()
+    kept = [c for c in cards if c.created[:10] >= cutoff]
+    if len(kept) != len(cards):
+        remind._save(kept)
     return removed, round(freed / 1e6, 1)
 
 

@@ -255,7 +255,7 @@ def test_empty_day_is_completed_and_saved(monkeypatch):
 
     monkeypatch.setattr(log, "get", lambda *a: SimpleNamespace(info=lambda *a: None, warning=lambda *a: None,
                                                              error=lambda *a: None))
-    monkeypatch.setattr(streaks, "purge_expired_audio", lambda *a: (0, 0))
+    monkeypatch.setattr(streaks, "purge_expired", lambda *a: (0, 0))
     monkeypatch.setattr(schedule, "on_battery", lambda: False)
     monkeypatch.setattr(listener, "todays_audio", lambda *a: [])
     monkeypatch.setattr(report, "write", lambda *a, **k: {"html": "report.html"})

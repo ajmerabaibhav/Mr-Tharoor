@@ -48,17 +48,11 @@ def test_install_command_returns_failure(monkeypatch):
     assert cli.cmd_install(argparse.Namespace(remove=False, status=False, dry_run=False)) == 1
 
 
-def test_report_is_html_only_and_prunes_pages_older_than_four_days(monkeypatch):
+def test_report_is_html_only(monkeypatch):
     monkeypatch.setattr(config, "user_name", lambda: "Test")
     today = date.today()
-    old, kept = today - timedelta(days=5), today - timedelta(days=4)
-    for day in (old, kept):
-        for ext in (".html", ".pdf", ".docx", ".json"):
-            (config.REPORTS_DIR / f"{day}{ext}").write_text("x")
     assert report.write([], today) == {"html": str(config.REPORTS_DIR / f"{today}.html")}
-    assert not any((config.REPORTS_DIR / f"{old}{ext}").exists() for ext in (".html", ".pdf", ".docx"))
-    assert (config.REPORTS_DIR / f"{old}.json").exists(), "the week strip needs the JSON"
-    assert (config.REPORTS_DIR / f"{kept}.html").exists()
+    assert not list(config.REPORTS_DIR.glob(f"{today}.pdf")) + list(config.REPORTS_DIR.glob(f"{today}.docx"))
 
 
 def test_open_report_opens_the_page(monkeypatch):

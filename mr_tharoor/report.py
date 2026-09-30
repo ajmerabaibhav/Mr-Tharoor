@@ -1,11 +1,11 @@
 """Turn a day's findings into the page that opens at 08:30.
 
 The page is deliberately one self-contained file. Audio is embedded rather
-than linked, so it keeps working when the clips are deleted three days later,
+than linked, so it keeps working after the clips are deleted,
 and it can be sent to someone or kept forever without dragging a folder along.
 
 HTML only. It is the one format that can play sound, and hearing your own
-voice is the point. Pages older than KEEP_DAYS are deleted each night.
+voice is the point. Old pages are deleted by streaks.purge_expired.
 """
 
 from __future__ import annotations
@@ -464,34 +464,12 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
 
 def write(findings: list, day: date | None = None, grammar: list[dict] | None = None,
           analysis: dict | None = None) -> dict[str, str]:
-    """The day's page, then clear out old ones."""
+    """The day's page."""
     day = day or date.today()
     config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     html_path = config.REPORTS_DIR / f"{day.isoformat()}.html"
     html_path.write_text(build_html(findings, day, grammar, analysis), encoding="utf-8")
-    prune()
     return {"html": str(html_path)}
-
-
-KEEP_DAYS = 4
-
-
-def prune(keep_days: int = KEEP_DAYS, today: date | None = None) -> int:
-    """Delete report pages older than keep_days. The small JSON files stay:
-    the week strip counts from them. Returns how many files went."""
-    cutoff = (today or date.today()).toordinal() - keep_days
-    gone = 0
-    for path in config.REPORTS_DIR.glob("????-??-??.*"):
-        if path.suffix not in (".html", ".pdf", ".docx"):
-            continue
-        try:
-            old = date.fromisoformat(path.stem).toordinal() < cutoff
-        except ValueError:
-            continue
-        if old:
-            path.unlink(missing_ok=True)
-            gone += 1
-    return gone
 
 
 def repair_exports(day: date, analysis: dict) -> bool:

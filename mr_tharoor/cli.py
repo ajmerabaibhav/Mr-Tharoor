@@ -548,10 +548,10 @@ def _analyse_day(args: argparse.Namespace) -> int:
     when = _date.fromisoformat(args.day) if args.day else _date.today()
     logger = log.get("nightly")
 
-    files, freed = streaks.purge_expired_audio(when)
+    files, freed = streaks.purge_expired(when)
     if files:
-        logger.info(f"deleted {files} expired recordings, freed {freed} MB")
-        print(f"  cleaned up {files} old recordings ({freed} MB), tallies kept")
+        logger.info(f"deleted {files} expired files, freed {freed} MB")
+        print(f"  deleted {files} files older than {config.KEEP_DAYS} days ({freed} MB)")
 
     if schedule.on_battery() and not args.force:
         logger.info("on battery, skipping (use --force to override)")

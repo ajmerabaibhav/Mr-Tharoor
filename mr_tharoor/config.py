@@ -16,6 +16,12 @@ DATA_DIR = ROOT / "data"
 CLIPS_DIR = DATA_DIR / "clips"
 REPORTS_DIR = ROOT / "reports"
 
+# Everything this tool stores about a day -- audio, clips, the page, your
+# sentences, the tallies -- is deleted on the night KEEP_DAYS later: a day
+# is analysed that night, read the next morning, and gone the night after.
+# Nobody opening this laptop can scroll back through old mistakes.
+KEEP_DAYS = 2
+
 # Wikimedia asks for a descriptive User-Agent on API traffic.
 USER_AGENT = "mr-tharoor/0.1 (personal pronunciation tool; local use)"
 NETWORK_TIMEOUT = 12
@@ -51,7 +57,7 @@ def write_json_atomically(path: Path, payload: object) -> None:
     the laptop lid closes at the wrong moment. Both of this project's JSON
     files are then unreadable, and the recovery path (return {}) silently
     replaces the whole thing on the next save. For history.json that is
-    unrecoverable: the audio behind it is deleted after three days, so the
+    unrecoverable: the audio behind it is deleted after KEEP_DAYS, so the
     tallies are the only surviving record.
 
     os.replace is atomic on the same filesystem, so a reader sees either the

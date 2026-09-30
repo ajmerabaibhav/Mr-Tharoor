@@ -127,17 +127,41 @@ def test_report_is_capped_but_keeps_the_win(tmp: Path):
           f"{len(report[0].words)} named   ok")
 
 
-def test_audio_expiry_is_three_days(tmp: Path):
-    """The CPU knob. Audio goes, tallies stay."""
-    fresh_history(tmp)
-    seed([0, 1, 2, 5, 9])
-    expired = streaks.expired_audio_days(TODAY)
-    assert (TODAY - timedelta(days=9)).isoformat() in expired
-    assert (TODAY - timedelta(days=5)).isoformat() in expired
-    assert (TODAY - timedelta(days=1)).isoformat() not in expired
-    # and the counts for those expired days survive
-    assert (TODAY - timedelta(days=9)).isoformat() in streaks._load()
-    print("audio expires, counts stay  ok")
+def test_first_october_is_gone_on_the_third():
+    """Everything about a day is deleted two nights later, and nothing sooner."""
+    import os
+    from datetime import datetime
+    from mr_tharoor import config, remind
+
+    first, second, third = date(2026, 10, 1), date(2026, 10, 2), date(2026, 10, 3)
+    for day in (first, second):
+        streaks.record_day(day, [Finding(word="version", contrast="v->w", said=9, wrong=7, confidence=0.9)])
+        folder = config.DATA_DIR / "sessions" / str(day)
+        folder.mkdir(parents=True)
+        (folder / "wispr-1.wav").write_bytes(b"x" * 100)
+        for name in (".html", ".json", "-grammar.json", "-grammar-raw.json", "-analysis.json", ".pdf"):
+            (config.REPORTS_DIR / f"{day}{name}").write_text("x")
+        clip = config.CLIPS_DIR / f"{day}-version.wav"
+        clip.write_bytes(b"x")
+        stamp = datetime.combine(day, datetime.min.time()).timestamp() + 3600
+        os.utime(clip, (stamp, stamp))
+    remind._save([remind.Card(word="version", contrast="v->w", said="w", should_be="v", created=f"{d}T12:00:00")
+                  for d in (first, second)])
+
+    streaks.purge_expired(second)
+    assert (config.REPORTS_DIR / f"{first}.html").exists(), "must survive until the 3rd"
+
+    streaks.purge_expired(third)
+    assert not list(config.REPORTS_DIR.glob(f"{first}*"))
+    assert not (config.DATA_DIR / "sessions" / str(first)).exists()
+    assert not (config.CLIPS_DIR / f"{first}-version.wav").exists()
+    assert str(first) not in streaks._load()
+    assert [c.created[:10] for c in remind._load()] == [str(second)]
+    # the 2nd is read on the morning of the 3rd, so it all stays tonight
+    assert (config.REPORTS_DIR / f"{second}.html").exists()
+    assert (config.DATA_DIR / "sessions" / str(second) / "wispr-1.wav").exists()
+    assert (config.CLIPS_DIR / f"{second}-version.wav").exists()
+    assert str(second) in streaks._load()
 
 
 def test_rare_word_reaches_the_report(tmp: Path):

@@ -86,7 +86,9 @@ is dropped. Nothing else stands between you and an invented mistake.
 
 ## Privacy
 
-Audio never leaves the laptop and raw recordings delete after three days. The
+Audio never leaves the laptop. Everything stored about a day (recordings,
+clips, the report, your sentences, the tallies) deletes itself two nights
+later: Monday's data is gone on Wednesday night. The
 microphone never opens while another app holds it. `data/`, `cache/`,
 `reports/` and `logs/` are gitignored; this repo contains no recordings.
 
