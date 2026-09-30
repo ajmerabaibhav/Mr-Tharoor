@@ -87,7 +87,13 @@ def recorded_megabytes() -> float:
     sessions = config.DATA_DIR / "sessions"
     if not sessions.exists():
         return 0.0
-    return sum(f.stat().st_size for f in sessions.rglob("*.wav")) / 1e6
+    total = 0
+    for f in sessions.rglob("*.wav"):
+        try:
+            total += f.stat().st_size
+        except FileNotFoundError:  # the nightly clean-up deleted it mid-count
+            pass
+    return total / 1e6
 
 
 def has_speech(audio) -> bool:
