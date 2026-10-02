@@ -10,9 +10,10 @@ Two engines live here.
                           Local, free, and measured: across a month of real
                           dictation they found nothing at all.
 
-    llm_check()           the Claude Code CLI already installed on this
-                          machine, given the day's raw transcripts. On one
-                          real day: 23 corrections where the rules found 0.
+    llm_check()           the Claude Code CLI (or, without it, OpenAI's Codex
+                          CLI) already installed on this machine, given the
+                          day's raw transcripts. On one real day: 23
+                          corrections where the rules found 0.
 
 The rules remain as the fallback when the CLI is absent or MR_THAROOR_NO_LLM
 is set, because a grammar section that needs a network is worse than a thin
@@ -314,12 +315,15 @@ def summarise(findings: list[GrammarFinding], limit: int = 8) -> list[dict]:
 # new dependency. Text leaves the laptop for that call; audio never does, and
 # the great majority of this text was dictated or typed into Claude to begin
 # with. MR_THAROOR_NO_LLM=1 turns it off and leaves the local rules.
+# Codex is the same idea for people with ChatGPT instead of Claude: it is used
+# when claude is not installed, or always with MR_THAROOR_LLM=codex.
 #
 # Every correction it returns is checked against the transcript before it is
 # believed: if the span it claims you said is not in the text, it is dropped.
 # --------------------------------------------------------------------------
 
-LLM_MODEL = os.environ.get("MR_THAROOR_LLM_MODEL", "claude-haiku-4-5-20251001")
+LLM_CLI = os.environ.get("MR_THAROOR_LLM", "")  # claude | codex; empty = first one installed
+LLM_MODEL = os.environ.get("MR_THAROOR_LLM_MODEL", "")  # empty = haiku for claude, codex's default
 LLM_BATCH = 20  # utterances per call
 LLM_MAX_BATCHES = 8  # a day cannot cost more than this
 LLM_TIMEOUT = 420  # seconds per call; the nightly job has all night
@@ -350,14 +354,20 @@ KINDS = {"article", "preposition", "number", "verb", "tense", "word-order", "pro
 
 def llm_binary() -> str | None:
     """launchd's PATH is four directories long. Find the CLI ourselves."""
-    found = shutil.which("claude")
-    if found:
-        return found
-    for candidate in (Path.home() / ".local/bin/claude", Path("/opt/homebrew/bin/claude"),
-                      Path("/usr/local/bin/claude")):
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
+    for name in [LLM_CLI] if LLM_CLI else ["claude", "codex"]:
+        found = shutil.which(name)
+        if found:
+            return found
+        for folder in (Path.home() / ".local/bin", Path("/opt/homebrew/bin"), Path("/usr/local/bin")):
+            candidate = folder / name
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
     return None
+
+
+def llm_name() -> str:
+    """"claude" or "codex": which CLI the grammar call goes through."""
+    return Path(llm_binary() or "claude").name
 
 
 def llm_available() -> bool:
@@ -368,7 +378,7 @@ def _normalised(text: str) -> str:
     return " ".join(_words(text))
 
 
-def _run_claude(prompt: str) -> str:
+def _run_llm(prompt: str) -> str:
     """One headless call. No MCP servers: measured, they doubled the wall time.
 
     cwd is inside our own data directory on purpose. Claude Code writes a
@@ -383,9 +393,23 @@ def _run_claude(prompt: str) -> str:
         return ""
     workdir = config.DATA_DIR / "llm"
     workdir.mkdir(parents=True, exist_ok=True)
+    if Path(binary).name == "codex":
+        # --ephemeral: no session file. --ignore-user-config: no MCP servers
+        # (auth survives it). Read-only: the reply is text, nothing to run.
+        command = [binary, "exec", "--skip-git-repo-check", "--ephemeral",
+                   "--ignore-user-config", "-s", "read-only", prompt]
+        if LLM_MODEL:
+            command[2:2] = ["-m", LLM_MODEL]
+    else:
+        # No tools, no settings, a one-line system prompt. Measured: Claude
+        # Code's own coding prompt and tool list cost 26,600 tokens a call
+        # before reading a word of yours; this costs about 400.
+        command = [binary, "-p", prompt, "--model", LLM_MODEL or "claude-haiku-4-5-20251001",
+                   "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+                   "--tools", "", "--setting-sources", "",
+                   "--system-prompt", "You are an exacting English teacher."]
     result = subprocess.run(
-        [binary, "-p", prompt, "--model", LLM_MODEL,
-         "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}'],
+        command,
         capture_output=True, text=True, timeout=LLM_TIMEOUT, cwd=str(workdir),
         env=_environment(),
     )
@@ -393,7 +417,7 @@ def _run_claude(prompt: str) -> str:
         # The tail, not the head: the CLI prints settings warnings first, and
         # "Not logged in" hid behind one for two nights.
         raise RuntimeError(((result.stderr or "") + (result.stdout or "")).strip()[-300:]
-                           or "claude exited non-zero")
+                           or f"{Path(binary).name} exited non-zero")
     return result.stdout
 
 
@@ -525,10 +549,10 @@ def llm_check(items: list[tuple[str, str]], mode: str = "spoken", *, logger=None
         )
         try:
             try:
-                reply = _run_claude(prompt)
+                reply = _run_llm(prompt)
             except subprocess.TimeoutExpired:
                 # The Mac slept through the call (24 and 27 Sep). Awake now; once more.
-                reply = _run_claude(prompt)
+                reply = _run_llm(prompt)
         except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
             if logger:
                 logger.warning(f"grammar check failed ({mode}): {type(exc).__name__}: {exc}")

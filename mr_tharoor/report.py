@@ -57,42 +57,33 @@ def _as_heard(word: str, contrast: str) -> str | None:
 # The medallion is not decoration. The drawing is ink on nothing, so on a dark
 # background it simply disappears; the filled disc gives it its own paper
 # wherever it is put, including a README on GitHub at night.
-_FIGURE = """
-<path d="M11 136c3-26 15-37 30-41l7-14h14l7 14c15 4 27 15 30 41" />
-<path d="M46 81c5 7 17 7 22 0" />
-<path d="M45 84l3 12M67 84l-3 12" />
-<path d="M49 92l6 12 6-12" />
-<path d="M48 96l-4 40M64 96l4 40" />
-<circle cx="56" cy="112" r="1.6" fill="{ink}" /><circle cx="56" cy="124" r="1.6" fill="{ink}" />
-<path d="M70 101l5-4 5 3-4 3z" />
-<ellipse cx="54" cy="46" rx="21" ry="24" fill="{paper}" />
-<path d="M33 44c-2-21 9-31 21-31s23 10 21 31c-2-13-9-20-21-20s-19 7-21 20z" fill="{ink}" stroke="none" />
-<path d="M38 30c5-4 12-6 19-5M71 36c3 3 4 8 3 12" stroke="{paper}" stroke-width="1.8" />
-<path d="M33 46c-3 0-5 3-4 6s3 5 6 4M75 46c3 0 5 3 4 6s-3 5-6 4" />
-<circle cx="45" cy="48" r="8.5" fill="{paper}" /><circle cx="63" cy="48" r="8.5" fill="{paper}" />
-<path d="M53.5 48h1M36.5 46l-3-2M71.5 46l3-2" />
-<path d="M39 36c3-2 7-2 9 1M60 37c2-3 6-3 9-1" />
-<path d="M54 48c0 5-1 7-3 9 2 1 4 1 6 0" />
-<path d="M44 62c5 6 15 6 20 0" stroke-width="2.4" />
-<path d="M41 58c-1 4 0 6 2 8M67 58c1 4 0 6-2 8" />
-<circle cx="45" cy="48" r="1.7" fill="{ink}" /><circle cx="63" cy="48" r="1.7" fill="{ink}" />
-"""
-
-_MEDALLION = """<svg {attrs}viewBox="0 0 124 124" role="img" aria-label="Mr Tharoor">
-<defs><clipPath id="{cid}"><circle cx="62" cy="62" r="58" /></clipPath></defs>
-<circle cx="62" cy="62" r="58" fill="{paper}" />
-<g clip-path="url(#{cid})" transform="translate(8 6)" fill="none" stroke="{ink}"
-   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{figure}</g>
-<circle cx="62" cy="62" r="58" fill="none" stroke="{ink}" stroke-width="2.2" />
+# An old-school English teacher: swept-back hair going silver at the temples,
+# a warm smile, a light purple kurta. Fixed colours, so it reads the same in
+# light and dark mode.
+PORTRAIT = """<svg class="portrait" viewBox="0 0 124 124" role="img" aria-label="Mr Tharoor">
+<defs><clipPath id="tharoor-face"><circle cx="62" cy="62" r="58"/></clipPath></defs>
+<circle cx="62" cy="62" r="58" fill="#F4EEE2"/>
+<g clip-path="url(#tharoor-face)" transform="translate(8 6)" stroke="#1F1A17" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M-4 124C-2 94 14 82 36 77L54 82L72 77C94 82 110 94 112 124Z" fill="#C9B6E4"/>
+  <path d="M47 64L47 76Q54 80 61 76L61 64Z" fill="#B07450"/>
+  <path d="M45 74Q54 81 63 74L64 79Q54 86 44 79Z" fill="#C9B6E4"/>
+  <path d="M51 83L51 112L57 112L57 83" fill="none" stroke-width="1"/>
+  <circle cx="54" cy="89" r="1.2" fill="#5B4580" stroke="none"/><circle cx="54" cy="98" r="1.2" fill="#5B4580" stroke="none"/><circle cx="54" cy="107" r="1.2" fill="#5B4580" stroke="none"/>
+  <path d="M26 112L30 98M82 112L78 98" fill="none" stroke-width="1"/>
+    <ellipse cx="34.5" cy="46" rx="3.2" ry="5.5" fill="#B07450"/><ellipse cx="73.5" cy="46" rx="3.2" ry="5.5" fill="#B07450"/>
+  <path d="M35 40C35 28 43 22 54 22C65 22 73 28 73 40C73 56 65 67 54 67C43 67 35 56 35 40Z" fill="#B07450"/>
+    <path d="M34 44C31 29 34 15 44 10C54 5 69 7 75 15C80 22 78 34 74 44C73 36 71 30 65 27.5C61 26 57.5 27.5 54.5 29C51 27 47 26 43.5 27.5C39 29.5 36 36 34 44Z" fill="#1E1A18"/>
+  <path d="M43.5 27C42 22 42.5 16 45 12M49 26C50 20 54 14 60 11M56 28C59 22 64 17 71 15M62 27C66 23 70 21 75 21" fill="none" stroke="#5E5853" stroke-width="1.1"/>
+  <path d="M34.5 43C34 38 35 34 37 32M73.5 43C74 38 73 34 71 32" fill="none" stroke="#BDB6AE" stroke-width="2.4"/>
+    <path d="M40 37Q45 33.5 50 36.5M58 36.5Q63 33.5 68 37" fill="none" stroke-width="2.2"/>
+  <path d="M42 42Q45.5 39.5 49 42M59 42Q62.5 39.5 66 42" fill="none"/>
+  <circle cx="45.5" cy="42" r="1.2" fill="#1F1A17" stroke="none"/><circle cx="62.5" cy="42" r="1.2" fill="#1F1A17" stroke="none"/>
+  <path d="M54 43C54 48 53 50 50.5 52Q54 54.5 57.5 52" fill="none" stroke-width="1.2"/>
+  <path d="M45 57Q54 63 63 57" fill="none" stroke-width="1.7"/>
+  <path d="M43 52Q42 56 44.5 59M65 52Q66 56 63.5 59" fill="none" stroke-width="1"/>
+</g>
+<circle cx="62" cy="62" r="58" fill="none" stroke="#1F1A17" stroke-width="2.2"/>
 </svg>"""
-
-
-def _portrait(ink: str, paper: str, cid: str, attrs: str = "") -> str:
-    return _MEDALLION.format(figure=_FIGURE.format(ink=ink, paper=paper),
-                             ink=ink, paper=paper, cid=cid, attrs=attrs)
-
-
-PORTRAIT = _portrait("currentColor", "var(--paper)", "tharoor-face", 'class="portrait" ')
 
 
 CONTRAST_NAMES = {
@@ -210,7 +201,7 @@ def _grammar_html(habits: list[dict], name: str = "") -> str:
          "From your dictation and reading audio, marked against the raw transcript. "
          "Listen to the recording before you accept a correction: a recogniser can mishear."),
         (typed_rows, "What you typed",
-         "From what you typed into Claude Code. Pastes, commands and tool output are excluded."),
+         "From what you typed into Claude Code or Codex. Pastes, commands and tool output are excluded."),
     ):
         if not rows:
             continue
@@ -265,11 +256,13 @@ CANDIDATE_LIMIT = 8  # how many unconfirmed sounds the page will show
 
 def _provenance(analysis: dict) -> str:
     """Say in the report itself what left the machine. It is the honest place."""
-    if analysis.get("grammar_engine") != "claude-cli":
+    engine = analysis.get("grammar_engine", "")
+    if not engine.endswith("-cli"):
         return ('<div class="tribute">Everything in this report was produced on this machine. '
                 'Grammar came from local rules.</div>')
     return ('<div class="tribute">Pronunciation was measured on this machine and no audio left it. '
-            "Grammar was checked by the Claude Code CLI already installed here, which means the day's "
+            f"Grammar was checked by the {'Codex' if engine == 'codex-cli' else 'Claude Code'} CLI "
+            "already installed here, which means the day's "
             'transcript text was sent for that one call. Set MR_THAROOR_NO_LLM=1 to use local rules '
             'instead.</div>')
 

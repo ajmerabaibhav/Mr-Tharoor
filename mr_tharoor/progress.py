@@ -47,7 +47,7 @@ def _analysed_days(days: list[date]) -> list[date]:
             written = json.loads(marker.read_text())
         except (ValueError, TypeError):
             continue
-        if (written.get("grammar_engine") == "claude-cli"
+        if (written.get("grammar_engine") in ("claude-cli", "codex-cli")
                 and int(written.get("version", 0)) >= SCHEMA):
             out.append(day)
     return out

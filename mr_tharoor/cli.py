@@ -638,7 +638,7 @@ def _analyse_day(args: argparse.Namespace) -> int:
             print(f"  {failures} sources failed. Previous report kept; see `tharoor logs`.")
             return 1
 
-        # ---- source 3: what you typed (Claude Code's own transcripts) ----
+        # ---- source 3: what you typed (Claude Code's and Codex's own logs) ----
         spoken_now = [text for _, text in spoken_texts]
         try:
             typed_texts = typed.for_day(when, exclude=spoken_now + [d.meant for d in dictations])
@@ -660,7 +660,7 @@ def _analyse_day(args: argparse.Namespace) -> int:
             found += grammar.llm_check(typed_texts, "typed", logger=logger)
             grammar_findings += grammar.merge(found, rules)
         else:
-            logger.warning("Claude Code CLI not found; grammar falls back to local rules")
+            logger.warning("neither Claude Code nor Codex CLI found; grammar falls back to local rules")
             grammar_findings += rules
 
         streaks.record_day(when, tallies)
@@ -728,7 +728,7 @@ def _analyse_day(args: argparse.Namespace) -> int:
             "version": daily.ANALYSIS_VERSION, "completed_at": datetime.now().isoformat(),
             "sources": sources, "opportunities": sum(t.said for t in tallies),
             "candidates": len(findings), "shown": len(selected),
-            "grammar_engine": "claude-cli" if grammar.llm_available() else "local-rules",
+            "grammar_engine": f"{grammar.llm_name()}-cli" if grammar.llm_available() else "local-rules",
             "grammar_found": len(grammar_findings),
         }
         written = report.write(findings, when, grammar=grammar_rows, analysis=analysis)

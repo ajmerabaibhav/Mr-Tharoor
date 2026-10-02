@@ -15,7 +15,11 @@ folder belonging to Mr Tharoor itself -- the grammar checker is Claude Code,
 its own prompts land in a transcript, and without that filter tonight's
 prompt becomes tomorrow's homework.
 
-# ponytail: Claude Code only. Everything else you type -- Slack, Mail, the
+Codex users get the same: ~/.codex/history.jsonl is Codex's own list of the
+prompts you typed, one {"ts", "text"} row each. Our own grammar calls run with
+--ephemeral and never land there.
+
+# ponytail: Claude Code and Codex only. Everything else you type -- Slack, Mail, the
 # browser -- needs an Accessibility keylogger, which is a password-shaped
 # risk for a grammar report. Add one only if the typing section proves itself.
 """
@@ -28,6 +32,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 PROJECTS = Path.home() / ".claude" / "projects"
+CODEX_HISTORY = Path.home() / ".codex" / "history.jsonl"
 
 # Blocks that are in the message but were never typed by a person.
 NOISE = re.compile(
@@ -79,7 +84,7 @@ def _when(row: dict) -> datetime | None:
 
 
 def for_day(day: date, exclude: list[str] | None = None) -> list[tuple[str, str]]:
-    """Everything typed into Claude Code on `day`, as [(source label, text)].
+    """Everything typed into Claude Code or Codex on `day`, as [(source label, text)].
 
     `exclude` is the day's dictations: text that was spoken into a text box is
     not typing, and counting it twice would make one mistake look like a habit.
@@ -87,6 +92,16 @@ def for_day(day: date, exclude: list[str] | None = None) -> list[tuple[str, str]
     spoken = [_plain(t) for t in (exclude or []) if t]
     out: list[tuple[str, str]] = []
     seen: set[str] = set()
+
+    def keep(label: str, text: str) -> None:
+        if not text or len(text) > MAX_CHARS or len(text.split()) < MIN_WORDS:
+            return
+        key = _plain(text)
+        if key in seen or any(key in utterance or utterance in key for utterance in spoken):
+            return
+        seen.add(key)
+        out.append((label, text))
+
     for transcript in sorted(PROJECTS.glob("*/*.jsonl")):
         if "mr-tharoor" in transcript.parent.name or "mr_tharoor" in transcript.parent.name:
             continue
@@ -107,12 +122,17 @@ def for_day(day: date, exclude: list[str] | None = None) -> list[tuple[str, str]
             when = _when(row)
             if when is None or when.date() != day:
                 continue
-            text = _text(row)
-            if not text or len(text) > MAX_CHARS or len(text.split()) < MIN_WORDS:
-                continue
-            key = _plain(text)
-            if key in seen or any(key in utterance or utterance in key for utterance in spoken):
-                continue
-            seen.add(key)
-            out.append((f"{day}-typed-{transcript.stem[:8]}-{number}", text))
+            keep(f"{day}-typed-{transcript.stem[:8]}-{number}", _text(row))
+    try:
+        codex = CODEX_HISTORY.read_text(errors="replace").splitlines()
+    except OSError:
+        codex = []
+    for number, line in enumerate(codex):
+        try:
+            row = json.loads(line)
+            when = datetime.fromtimestamp(row["ts"]).date()
+        except (json.JSONDecodeError, TypeError, KeyError, ValueError, OSError):
+            continue
+        if when == day:
+            keep(f"{day}-typed-codex-{number}", _text({"message": {"content": row.get("text")}}))
     return out

@@ -30,6 +30,7 @@ def isolated_data(tmp_path, monkeypatch):
     # The typing source reads the real ~/.claude/projects, and the grammar
     # checker shells out to the real Claude CLI. A test does neither.
     monkeypatch.setattr(typed, "PROJECTS", tmp_path / "projects")
+    monkeypatch.setattr(typed, "CODEX_HISTORY", tmp_path / "codex-history.jsonl")
     monkeypatch.setenv("MR_THAROOR_NO_LLM", "1")
     monkeypatch.setattr(schedule, "LOG_DIR", tmp_path / "logs")
 

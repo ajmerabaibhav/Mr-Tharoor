@@ -82,7 +82,13 @@ is dropped. Nothing else stands between you and an invented mistake.
 - **Pronunciation accuracy on your voice is unmeasured.** `tharoor check` is
   the only thing that turns it into a number. Nobody has run it yet.
 - **Text leaves the machine once a night** for the grammar call.
+  It uses the Claude Code CLI, or OpenAI's Codex CLI if that is what you have
+  (`MR_THAROOR_LLM=codex` to choose it when both are installed).
   `MR_THAROOR_NO_LLM=1` turns that off and falls back to local rules.
+  To keep that text out of model training, on a personal plan turn off "Help improve Claude" at
+  claude.ai/settings/data-privacy-controls, or "Improve the model for
+  everyone" in ChatGPT → Settings → Data controls (it covers Codex too).
+  Work, team and API accounts are not trained on by default.
 
 ## Privacy
 

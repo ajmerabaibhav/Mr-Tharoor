@@ -203,3 +203,31 @@ def test_indian_english_vocabulary_is_not_marked_as_a_mistake():
     # but the stative verb in the continuous is grammar, and is caught
     caught = grammar.check("I am having a doubt about the pricing", "x")
     assert [(f.said, f.should_be) for f in caught] == [("am having a doubt", "have a doubt")]
+
+
+def test_codex_is_used_when_claude_is_missing(monkeypatch, tmp_path):
+    codex = tmp_path / "codex"
+    codex.write_text("#!/bin/sh\necho '{\"i\": 1, \"said\": \"you have gave\", \"should_be\": \"you have given\", \"kind\": \"verb\"}'\n")
+    codex.chmod(0o755)
+    monkeypatch.setattr(grammar, "LLM_CLI", "")
+    monkeypatch.setattr(grammar.shutil, "which", lambda name: str(codex) if name == "codex" else None)
+    monkeypatch.setattr(grammar.os, "access", lambda path, mode: str(path) == str(codex))
+    monkeypatch.delenv("MR_THAROOR_NO_LLM", raising=False)
+    assert grammar.llm_name() == "codex"
+    found = grammar.llm_check([("s1", "thank you for the result you have gave me today")], "typed")
+    assert [(f.said, f.should_be) for f in found] == [("you have gave", "you have given")]
+
+
+def test_typed_reads_codex_prompt_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(typed, "PROJECTS", tmp_path / "none")
+    history = tmp_path / "history.jsonl"
+    monkeypatch.setattr(typed, "CODEX_HISTORY", history)
+    noon = datetime(2026, 9, 20, 12, 0).timestamp()
+    history.write_text("\n".join([
+        json.dumps({"session_id": "s", "ts": noon, "text": "can you tell me that whether it is good"}),
+        json.dumps({"session_id": "s", "ts": noon - 86400, "text": "this one was typed the day before"}),
+        json.dumps({"session_id": "s", "ts": noon, "text": "/model"}),
+        "{ broken json",
+    ]) + "\n")
+    out = typed.for_day(date(2026, 9, 20))
+    assert [text for _, text in out] == ["can you tell me that whether it is good"]
