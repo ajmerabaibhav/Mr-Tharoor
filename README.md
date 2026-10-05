@@ -38,7 +38,6 @@ type normally. That is the whole interaction.
 | source | what it gives him |
 |---|---|
 | **Wispr Flow's database** | your dictation, in any app, with the audio already paired to the words you meant. Grammar *and* pronunciation. |
-| **His own microphone** | reading aloud. Calls are never recorded: there is no speaker filter, and it is not your voice on the other end. |
 | **Claude Code's transcripts** | what you typed. Grammar only. Pastes, commands and tool output excluded; deliberately not a keylogger. |
 | **The text box you are typing in** | Mail, Slack, ChatGPT, Notes, a browser. Grammar only. Read through Accessibility like a screen reader, never keystrokes. Never reads password fields, single-line boxes (URL bars, search, logins), password managers, terminals or private chats, and nothing at all while macOS Secure Input is on. Pastes are dropped; emails, links and long numbers are scrubbed before they are saved. Off until you allow the listener's Python under System Settings › Privacy & Security › Accessibility. |
 
@@ -61,7 +60,8 @@ is dropped. Nothing else stands between you and an invented mistake.
 
 | | |
 |---|---|
-| `tharoor listen` | the all-day loop. Sleeps when you are not talking |
+| `tharoor` | who he is, what he does, and what is running right now |
+| `tharoor listen` | the background job: reads your typing. Never opens the microphone |
 | `tharoor analyse-day` | run tonight's job now |
 | `tharoor morning` | open the latest lesson |
 | `tharoor check` | judge his findings, so accuracy becomes a number |
@@ -75,8 +75,10 @@ is dropped. Nothing else stands between you and an invented mistake.
 - **Meetings.** Dictation during a meeting is covered; live meeting speech is
   not. Measured: our share of a contended microphone is 4.5x quieter, and
   there is no speaker filter, so it was scoring the other person as you.
-- **Your own microphone is the weak source.** 3.1 dB on an ordinary day against
-  24.0 dB through Wispr. No algorithm closes that. Sit closer.
+- **He never opens the microphone.** Speech comes only from Wispr Flow, when
+  you choose to dictate. His own mic was 3.1 dB on an ordinary day against
+  24.0 dB through Wispr, and switching it on in every browser was not worth it.
+  No dictation, no pronunciation lesson.
 - **Progress needs a week and says so.** The seven-day strip divides by how
   much you actually produced and calls anything inside the noise band exactly
   that: nothing proved.

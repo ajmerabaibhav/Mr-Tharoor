@@ -498,13 +498,17 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print(f"  Set up with problems: {', '.join(problems)}")
         print("  Fix those and run `tharoor setup` again.")
         return 1
-    print("  Ready. Mr Tharoor is listening now and starts on every login.")
+    print("  Ready. Mr Tharoor runs in the background and starts on every login.")
     print()
-    print("  Talk normally. At 23:30 he analyses the day, at 08:30 the report")
-    print("  opens by itself. Nothing leaves this machine.")
+    print("  Type and dictate (Wispr Flow) normally. At 23:30 he checks the day,")
+    print("  at 08:30 the lesson opens by itself. Audio never leaves this machine;")
+    print("  the day's sentences go to your Claude Code or Codex CLI for grammar.")
     print()
-    print("  tharoor gate     is he listening right now, and why")
-    print("  tharoor mictest  find your best microphone setup")
+    print("  To read what you type in other apps (Gmail, Notes, Slack), allow")
+    print(f"  {__import__('os').path.realpath(sys.executable)} under System Settings >")
+    print("  Privacy & Security > Accessibility, then run `tharoor install`.")
+    print()
+    print("  tharoor          what he does and what is running")
     print("  tharoor logs     what the scheduled jobs did")
     return 0
 
@@ -981,7 +985,7 @@ def build_parser() -> argparse.ArgumentParser:
                            help="do not pre-download the 3GB of models")
     setup_cmd.set_defaults(func=cmd_setup)
 
-    listen_cmd = sub.add_parser("listen", help="start listening, context-aware")
+    listen_cmd = sub.add_parser("listen", help="the background job: reads your typing, never the mic")
     listen_cmd.add_argument("--seconds", type=float, default=None, help="stop after N seconds")
     listen_cmd.add_argument("--raw", action="store_true", help="skip Apple voice processing")
     listen_cmd.set_defaults(func=cmd_listen)
@@ -1044,6 +1048,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if not (sys.argv[1:] if argv is None else argv):
+        from . import welcome
+
+        return welcome.show()
     args = build_parser().parse_args(argv)
     return args.func(args)
 

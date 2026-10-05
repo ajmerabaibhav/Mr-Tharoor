@@ -80,3 +80,11 @@ def test_report_with_no_candidates_has_no_habit_greeting(monkeypatch):
     monkeypatch.setattr(daily, "trustworthy_contrasts", lambda *a, **k: {"v->w": 0.9})
     rendered = report.build_html([], dates.date.today())
     assert "there is a habit here" not in rendered
+
+
+def test_bare_tharoor_shows_the_welcome(capsys):
+    from mr_tharoor import cli
+
+    assert cli.main([]) == 0
+    out = capsys.readouterr().out
+    assert "Mr Tharoor" in out and "tharoor setup" in out and "Right now" in out
