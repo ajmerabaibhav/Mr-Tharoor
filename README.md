@@ -38,7 +38,7 @@ git clone https://github.com/ajmerabaibhav/Mr-Tharoor.git mr-tharoor
 cd mr-tharoor && pip install -e . && tharoor setup
 ```
 
-`tharoor setup` checks the machine, downloads the two speech models (~3 GB,
+`tharoor setup` checks the machine, downloads the phoneme model (~1.3 GB,
 once) and installs three background jobs. Then type and dictate normally.
 That is the whole interaction.
 
@@ -70,7 +70,7 @@ Type `tharoor` on its own any time to see what he does and what is running:
 
 ```
 the sounds you MADE   wav2vec2-espeak, on your machine, no language model
-the words you MEANT   whisper small.en, or Wispr's own text
+the words you MEANT   Wispr's own text
         ↓
 pool by SOUND across every word carrying it, weighted by audio quality,
 report only when the lower bound of the credible interval clears the floor
@@ -103,9 +103,6 @@ is dropped. Nothing else stands between you and an invented mistake.
   pronunciation lesson. (Measured: his own mic was 3.1 dB on an ordinary day
   against 24.0 dB through Wispr, and in a meeting it scored the other person
   as you.)
-- **Progress needs a week and says so.** The seven-day strip divides by how
-  much you actually produced and calls anything inside the noise band exactly
-  that: nothing proved.
 - **Pronunciation accuracy on your voice is unmeasured.** `tharoor check` is
   the only thing that turns it into a number. Nobody has run it yet.
 - **Text leaves the machine once a night** for the grammar call.

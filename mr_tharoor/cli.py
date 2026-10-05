@@ -1,4 +1,4 @@
-"""Mr Tharoor, your pronunciation teacher.
+"""Mr Tharoor, your English teacher.
 
     tharoor drill version three       say it after him, three times each
     tharoor say version               hear it once
@@ -6,7 +6,7 @@
     tharoor check                     judge his flags, so we learn if he is right
     tharoor score                     how accurate he has actually been
     tharoor setup                     one command: check, permit, download, schedule
-    tharoor listen                    start listening (context-aware, all day)
+    tharoor listen                    the background job: reads your typing, never the mic
     tharoor analyse-day               the 23:30 job: score today, build the report
     tharoor morning                   the 08:30 job: open it, send reminders
     tharoor probe                     record the 20 sentences that test if he works
@@ -449,9 +449,9 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print("\n  Stopping here. Install the libraries above and run `tharoor setup` again.")
         return 1
 
-    print("\n  3. models (about 3 GB, downloaded once, then offline forever)")
+    print("\n  3. model (about 1.3 GB, downloaded once, then offline forever)")
     if args.skip_models:
-        print("     skipped. They download on first use instead.")
+        print("     skipped. It downloads on first use instead.")
     else:
         from . import listen
 
@@ -459,12 +459,9 @@ def cmd_setup(args: argparse.Namespace) -> int:
             print("     phoneme recogniser...", end=" ", flush=True)
             listen._model()
             print("ok")
-            print("     speech recogniser...", end=" ", flush=True)
-            listen._whisper()
-            print("ok")
         except Exception as exc:
             print(f"failed: {type(exc).__name__}: {exc}")
-            print("     they will retry on first use; check your connection")
+            print("     it will retry on first use; check your connection")
             problems.append("models")
 
     print("\n  4. schedule")
@@ -964,7 +961,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     setup_cmd = sub.add_parser("setup", help="one command to get running")
     setup_cmd.add_argument("--skip-models", action="store_true",
-                           help="do not pre-download the 3GB of models")
+                           help="do not pre-download the 1.3 GB phoneme model")
     setup_cmd.set_defaults(func=cmd_setup)
 
     listen_cmd = sub.add_parser("listen", help="the background job: reads your typing, never the mic")

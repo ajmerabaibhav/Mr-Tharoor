@@ -1,7 +1,7 @@
 [project]
 name = "mr-tharoor"
 version = "0.1.0"
-description = "A local pronunciation coach for macOS. Hears how you actually talk, and plays you the words you got wrong."
+description = "An English teacher for macOS: reads how you write, hears how you speak, and hands you a lesson every morning."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
