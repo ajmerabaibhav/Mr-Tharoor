@@ -99,9 +99,9 @@ Known ceilings of this approach:
 | What | Why it is acceptable |
 |---|---|
 | Transcript text now leaves the machine | Stated in the README and in the report footer. Audio still does not. `MR_THAROOR_NO_LLM=1` reverts to local rules. |
-| Typing is Claude Code only | Everything else needs an Accessibility keylogger, which would put passwords in a grammar report. Revisit only if the typing section proves useful. |
+| Typing outside Claude Code is multi-line text areas only | URL bars, search and single-line chat boxes are skipped on purpose (logins, private searches). Google Docs needs Tools › Accessibility › screen reader support. |
 | Text someone else wrote, pasted in and typed around, can be marked | Only when pasted without Claude Code's own `pasted_content` tags. Rare, low harm. |
-| One or two subprocess calls a night, ~90s each | Nightly job, no interactive path. Capped at 8 batches a day. |
+| One or two subprocess calls a night, ~90s each | Nightly job, no interactive path. Capped at 12 batches a day. |
 
 
 ## Reliability repairs — 20 September 2026

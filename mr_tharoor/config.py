@@ -22,6 +22,21 @@ REPORTS_DIR = ROOT / "reports"
 # Nobody opening this laptop can scroll back through old mistakes.
 KEEP_DAYS = 2
 
+# Apps whose text boxes textboxes.py never reads. Password managers and
+# settings for the obvious reason; terminals because Claude Code and Codex
+# are read from their own logs and the rest is commands; private messaging
+# because those are conversations, not writing practice. Add a bundle id
+# (osascript -e 'id of app "Name"') to keep any other app out.
+TYPING_BLOCKED = frozenset({
+    "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop",
+    "com.apple.keychainaccess", "com.apple.Passwords", "com.apple.systempreferences",
+    "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable",
+    "com.mitchellh.ghostty", "net.kovidgoyal.kitty",
+    "com.apple.MobileSMS", "net.whatsapp.WhatsApp", "desktop.WhatsApp",
+    "org.whispersystems.signal-desktop", "ru.keepcoder.Telegram", "com.tdesktop.Telegram",
+    "com.electron.wispr-flow",
+})
+
 # Wikimedia asks for a descriptive User-Agent on API traffic.
 USER_AGENT = "mr-tharoor/0.1 (personal pronunciation tool; local use)"
 NETWORK_TIMEOUT = 12

@@ -40,6 +40,7 @@ type normally. That is the whole interaction.
 | **Wispr Flow's database** | your dictation, in any app, with the audio already paired to the words you meant. Grammar *and* pronunciation. |
 | **His own microphone** | reading aloud. Calls are never recorded: there is no speaker filter, and it is not your voice on the other end. |
 | **Claude Code's transcripts** | what you typed. Grammar only. Pastes, commands and tool output excluded; deliberately not a keylogger. |
+| **The text box you are typing in** | Mail, Slack, ChatGPT, Notes, a browser. Grammar only. Read through Accessibility like a screen reader, never keystrokes. Never reads password fields, single-line boxes (URL bars, search, logins), password managers, terminals or private chats, and nothing at all while macOS Secure Input is on. Pastes are dropped; emails, links and long numbers are scrubbed before they are saved. Off until you allow the listener's Python under System Settings › Privacy & Security › Accessibility. |
 
 ## What he does with it
 

@@ -16,6 +16,7 @@ dependencies = [
     "huggingface-hub>=0.20",             # fetches both models
     "pyobjc-framework-AVFoundation>=10",  # Apple voice processing, 3-mic array
     "pyobjc-framework-Cocoa>=10",        # which app is in front
+    "pyobjc-framework-ApplicationServices>=10",  # the text box you are typing in
 ]
 
 [project.optional-dependencies]

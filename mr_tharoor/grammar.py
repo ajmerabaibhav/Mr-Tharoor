@@ -325,7 +325,7 @@ def summarise(findings: list[GrammarFinding], limit: int = 8) -> list[dict]:
 LLM_CLI = os.environ.get("MR_THAROOR_LLM", "")  # claude | codex; empty = first one installed
 LLM_MODEL = os.environ.get("MR_THAROOR_LLM_MODEL", "")  # empty = haiku for claude, codex's default
 LLM_BATCH = 20  # utterances per call
-LLM_MAX_BATCHES = 8  # a day cannot cost more than this
+LLM_MAX_BATCHES = 12  # a day cannot cost more than this
 LLM_TIMEOUT = 420  # seconds per call; the nightly job has all night
 
 PROMPT = """You are an exacting English teacher marking a fluent Indian English speaker's real {kind}. Each numbered item below is one {unit}.
@@ -346,7 +346,7 @@ ITEMS:
 
 SPOKEN_CAVEAT = ("This is speech-to-text output, so a wrong word the recogniser produced is NOT an error: "
                  "skip anything that reads like a mishearing rather than a grammar slip.")
-TYPED_CAVEAT = ("This is typed into a terminal, so missing capitals and apostrophes are not errors, "
+TYPED_CAVEAT = ("This is typed, often into a terminal or a chat box, so missing capitals and apostrophes are not errors, "
                 "and a typo is not a grammar mistake.")
 
 KINDS = {"article", "preposition", "number", "verb", "tense", "word-order", "pronoun", "phrase"}

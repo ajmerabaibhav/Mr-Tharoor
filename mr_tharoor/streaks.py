@@ -417,6 +417,9 @@ def purge_expired(today: date | None = None) -> tuple[int, float]:
         files += list(config.REPORTS_DIR.glob(f"{day}*"))
     if config.REPORTS_DIR.exists():  # pages from days with no audio at all
         files += [f for f in config.REPORTS_DIR.glob("????-??-??*") if f.name[:10] < cutoff]
+    typed = config.DATA_DIR / "typed"
+    if typed.exists():  # what you typed outside Claude Code (textboxes.py)
+        files += [f for f in typed.glob("????-??-??.jsonl") if f.name[:10] < cutoff]
     if config.CLIPS_DIR.exists():
         files += [f for f in config.CLIPS_DIR.iterdir()
                   if datetime.fromtimestamp(f.stat().st_mtime).date().isoformat() < cutoff]

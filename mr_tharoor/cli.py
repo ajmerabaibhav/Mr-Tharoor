@@ -430,6 +430,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         "cmudict": "cmudict", "torch": "torch", "transformers": "transformers",
         "faster_whisper": "faster-whisper", "AVFoundation": "pyobjc-framework-AVFoundation",
         "AppKit": "pyobjc-framework-Cocoa",
+        "ApplicationServices": "pyobjc-framework-ApplicationServices",
     }
     missing = []
     for module, package in required.items():
@@ -509,10 +510,14 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
 
 def cmd_listen(args: argparse.Namespace) -> int:
-    from . import listener
+    from . import listener, textboxes
 
     worker = listener.Listener(use_voice_processing=not args.raw)
-    stats = worker.run(max_seconds=args.seconds)
+    stop_typing = textboxes.start(worker.logger)
+    try:
+        stats = worker.run(max_seconds=args.seconds)
+    finally:
+        stop_typing.set()
     print(f"  {stats.as_dict()}")
     return 0
 
@@ -638,7 +643,7 @@ def _analyse_day(args: argparse.Namespace) -> int:
             print(f"  {failures} sources failed. Previous report kept; see `tharoor logs`.")
             return 1
 
-        # ---- source 3: what you typed (Claude Code's and Codex's own logs) ----
+        # ---- source 3: what you typed (Claude Code, Codex, other apps' text boxes) ----
         spoken_now = [text for _, text in spoken_texts]
         try:
             typed_texts = typed.for_day(when, exclude=spoken_now + [d.meant for d in dictations])

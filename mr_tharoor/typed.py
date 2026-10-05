@@ -19,9 +19,8 @@ Codex users get the same: ~/.codex/history.jsonl is Codex's own list of the
 prompts you typed, one {"ts", "text"} row each. Our own grammar calls run with
 --ephemeral and never land there.
 
-# ponytail: Claude Code and Codex only. Everything else you type -- Slack, Mail, the
-# browser -- needs an Accessibility keylogger, which is a password-shaped
-# risk for a grammar report. Add one only if the typing section proves itself.
+Everything else you type -- Mail, Slack, a browser box -- comes from
+textboxes.py, which reads the box you are typing in while you type.
 """
 
 from __future__ import annotations
@@ -135,4 +134,8 @@ def for_day(day: date, exclude: list[str] | None = None) -> list[tuple[str, str]
             continue
         if when == day:
             keep(f"{day}-typed-codex-{number}", _text({"message": {"content": row.get("text")}}))
+    from . import textboxes
+
+    for number, (_, text) in enumerate(textboxes.for_day(day)):
+        keep(f"{day}-typed-ax-{number}", text)
     return out
