@@ -320,13 +320,13 @@ def decide() -> Decision:
             f"{holders[0].bundle_id} has the microphone; waiting until it is free",
             front,
         )
-    if front in READING_APPS:
-        noisy = playing_media(front)
-        if noisy:
-            return Decision(LISTEN_NEVER, f"{noisy} is playing audio, so you are watching", front)
-        return Decision(LISTEN_SAMPLE, "you might be reading aloud", front)
-
-    return Decision(LISTEN_NEVER, f"{front or 'nothing'} is not a reading app", front)
+    # Reading-aloud sampling is off (5 Oct 2026, his call): it switched the
+    # microphone on in every browser, Gmail included, to guess whether he was
+    # reading aloud. Wispr captures his speech whenever he chooses to dictate,
+    # so the mic now only ever comes on through Wispr.
+    # ponytail: the LISTEN_SAMPLE path in listener.py is now unreachable;
+    # delete it, READING_APPS and the reading budget if this stays off.
+    return Decision(LISTEN_NEVER, "only Wispr records; this listener never opens the mic", front)
 
 
 def explain() -> str:
