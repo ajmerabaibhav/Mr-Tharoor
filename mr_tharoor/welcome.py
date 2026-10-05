@@ -11,29 +11,30 @@ import os
 import sys
 
 ART = [
-    "....HHHHHHH.....",
-    "...HHHHHHHHHHH..",
-    "..HHHHHHHHHHHHH.",
-    "..HHSSSSSHHHHH..",
-    "..HSSSSSSSSSSH..",
-    ".SSSGGSSSSGGSSS.",
-    ".SSGWEGGGGWEGSS.",
-    ".SSSGGSSSSGGSSS.",
-    "..SSSSSSSSSSSS..",
+    "....HHHHHHHH....",
+    "...HHHHHHHHHH...",
+    "..HHHHHHHHHHHH..",
+    "..XHSSSSSSSSHX..",
+    "..XSDDDSSDDDSX..",
+    ".SSSSSSSSSSSSSS.",
+    ".SSSDDSSSSDDSSS.",
+    "..SSSSSSNSSSSS..",
     "..SSSSSNNSSSSS..",
-    "..SSMSSSSSSMSS..",
-    "...SSMMMMMMSS...",
-    ".....SSSSSS.....",
-    "..BBBBTRRTBBBB..",
-    ".BBBBBTRRTBBBBB.",
-    ".BBBBBBRRBBBBBB.",
-    ".BBBBBBBBBBBBBB.",
-    "..BBBBBBBBBBBB..",
+    "..SSDSSSSSSDSS..",
+    "...SSDDDDDDSS...",
+    "....SSSSSSSS....",
+    "......SSSS......",
+    "...KKKKKKKKKK...",
+    ".KKKKKKLLKKKKKK.",
+    "KKKKKKKPLKKKKKKK",
+    "KKKKKKKLLKKKKKKK",
+    "KKKKKKKPLKKKKKKK",
 ]
+# The approved portrait (report.PORTRAIT): swept-back hair going silver at the
+# temples, heavy brows, smiling eyes, a light purple kurta with buttons.
 PALETTE = {
-    "H": (26, 26, 23), "S": (198, 139, 89), "N": (170, 112, 66), "M": (120, 50, 40),
-    "G": (26, 26, 23), "W": (251, 250, 246), "E": (40, 60, 120),
-    "B": (52, 72, 140), "T": (251, 250, 246), "R": (190, 50, 50),
+    "H": (30, 26, 24), "X": (189, 182, 174), "S": (176, 116, 80), "N": (142, 90, 58),
+    "D": (31, 26, 23), "K": (201, 182, 228), "L": (169, 148, 204), "P": (91, 69, 128),
 }
 
 

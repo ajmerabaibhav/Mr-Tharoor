@@ -63,7 +63,7 @@ def _as_heard(word: str, contrast: str) -> str | None:
 PORTRAIT = """<svg class="portrait" viewBox="0 0 124 124" role="img" aria-label="Mr Tharoor">
 <defs><clipPath id="tharoor-face"><circle cx="62" cy="62" r="58"/></clipPath></defs>
 <circle cx="62" cy="62" r="58" fill="#F4EEE2"/>
-<g clip-path="url(#tharoor-face)" transform="translate(8 6)" stroke="#1F1A17" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
+<g clip-path="url(#tharoor-face)"><g transform="translate(8 6)" stroke="#1F1A17" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round">
     <path d="M-4 124C-2 94 14 82 36 77L54 82L72 77C94 82 110 94 112 124Z" fill="#C9B6E4"/>
   <path d="M47 64L47 76Q54 80 61 76L61 64Z" fill="#B07450"/>
   <path d="M45 74Q54 81 63 74L64 79Q54 86 44 79Z" fill="#C9B6E4"/>
@@ -81,7 +81,7 @@ PORTRAIT = """<svg class="portrait" viewBox="0 0 124 124" role="img" aria-label=
   <path d="M54 43C54 48 53 50 50.5 52Q54 54.5 57.5 52" fill="none" stroke-width="1.2"/>
   <path d="M45 57Q54 63 63 57" fill="none" stroke-width="1.7"/>
   <path d="M43 52Q42 56 44.5 59M65 52Q66 56 63.5 59" fill="none" stroke-width="1"/>
-</g>
+</g></g>
 <circle cx="62" cy="62" r="58" fill="none" stroke="#1F1A17" stroke-width="2.2"/>
 </svg>"""
 

@@ -4,17 +4,18 @@
 
 # Mr Tharoor
 
-**An English teacher who listens to how you actually talk, then hands you a lesson every morning.**
+**An English teacher who reads how you write and hears how you speak, then hands you a lesson every morning.**
 
 </div>
 
 ---
 
-He reads what you dictate and what you type. He marks the grammar a teacher
-would mark, hears the sounds you get wrong, and at 08:30 a page opens on your
-desk: what you said, what to say instead, and the one word that tells you why.
+He reads what you type, in Gmail, Slack, Notes, ChatGPT or Claude Code, and
+what you dictate through Wispr Flow. He marks the grammar a teacher would mark,
+hears the sounds you get wrong, and at 08:30 a page opens on your desk: what
+you said, what to say instead, and the one word that tells you why.
 
-macOS. Your audio never leaves the laptop.
+macOS. He never opens your microphone, and your audio never leaves the laptop.
 
 > **AGREEMENT**
 > You said ~~"the people that is actually building"~~
@@ -29,17 +30,25 @@ git clone https://github.com/ajmerabaibhav/Mr-Tharoor.git mr-tharoor
 cd mr-tharoor && pip install -e . && tharoor setup
 ```
 
-`tharoor setup` checks the machine, asks for the microphone, downloads the two
-speech models (~3 GB, once), and installs three launch agents. Then talk and
-type normally. That is the whole interaction.
+`tharoor setup` checks the machine, downloads the two speech models (~3 GB,
+once) and installs three background jobs. Then type and dictate normally.
+That is the whole interaction.
+
+To have him read what you type outside Claude Code and Codex, allow the Python
+that `tharoor setup` names under **System Settings › Privacy & Security ›
+Accessibility**, then run `tharoor install` once more.
+
+Type `tharoor` on its own any time to see what he does and what is running:
+
+<img src="docs/terminal.png" width="640" alt="tharoor in the terminal: the pixel-art portrait, what he does, live status and commands">
 
 ## What he reads
 
 | source | what it gives him |
 |---|---|
 | **Wispr Flow's database** | your dictation, in any app, with the audio already paired to the words you meant. Grammar *and* pronunciation. |
-| **Claude Code's transcripts** | what you typed. Grammar only. Pastes, commands and tool output excluded; deliberately not a keylogger. |
-| **The text box you are typing in** | Mail, Slack, ChatGPT, Notes, a browser. Grammar only. Read through Accessibility like a screen reader, never keystrokes. Never reads password fields, single-line boxes (URL bars, search, logins), password managers, terminals or private chats, and nothing at all while macOS Secure Input is on. Pastes are dropped; emails, links and long numbers are scrubbed before they are saved. Off until you allow the listener's Python under System Settings › Privacy & Security › Accessibility. |
+| **Claude Code and Codex** | what you typed, from their own history. Grammar only. Pastes, commands and tool output excluded. |
+| **The text box you are typing in** | Mail, Slack, ChatGPT, Notes, a browser. Grammar only. Read through Accessibility like a screen reader, never keystrokes. Never reads password fields, single-line boxes (URL bars, search, logins), password managers, terminals or private chats, and nothing at all while macOS Secure Input is on. Pastes are dropped; emails, links and long numbers are scrubbed before they are saved. Off until you allow it under Accessibility (see Install). |
 
 ## What he does with it
 
@@ -50,7 +59,8 @@ the words you MEANT   whisper small.en, or Wispr's own text
 pool by SOUND across every word carrying it, weighted by audio quality,
 report only when the lower bound of the credible interval clears the floor
 
-the grammar            one batched call to the claude CLI already installed here
+the grammar            one batched call a night to the CLI already installed here:
+                       Claude Code (Haiku 4.5), or Codex (gpt-6-luna) if that is what you have
         ↓
 every correction must quote a span that is really in your transcript, or it
 is dropped. Nothing else stands between you and an invented mistake.
@@ -72,9 +82,9 @@ is dropped. Nothing else stands between you and an invented mistake.
 
 ## What he will not claim
 
-- **Meetings.** Dictation during a meeting is covered; live meeting speech is
-  not. Measured: our share of a contended microphone is 4.5x quieter, and
-  there is no speaker filter, so it was scoring the other person as you.
+- **Meetings are never recorded.** Dictation during a meeting is covered like
+  any other; live meeting speech is not. Measured: a shared microphone is 4.5x
+  quieter, and with no speaker filter it scored the other person as you.
 - **He never opens the microphone.** Speech comes only from Wispr Flow, when
   you choose to dictate. His own mic was 3.1 dB on an ordinary day against
   24.0 dB through Wispr, and switching it on in every browser was not worth it.
@@ -97,9 +107,12 @@ is dropped. Nothing else stands between you and an invented mistake.
 
 Audio never leaves the laptop. Everything stored about a day (recordings,
 clips, the report, your sentences, the tallies) deletes itself two nights
-later: Monday's data is gone on Wednesday night. The
-microphone never opens while another app holds it. `data/`, `cache/`,
-`reports/` and `logs/` are gitignored; this repo contains no recordings.
+later: Monday's data is gone on Wednesday night. He never opens the
+microphone. Typed text is read only from multi-line text boxes, never from
+password fields, password managers, terminals or private chats, and emails,
+links and long numbers are scrubbed before it is saved. `data/`, `cache/`,
+`reports/` and `logs/` are gitignored; this repo contains no recordings and
+no one's sentences but the example above.
 
 ## Tests
 

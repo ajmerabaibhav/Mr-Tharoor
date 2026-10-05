@@ -449,25 +449,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print("\n  Stopping here. Install the libraries above and run `tharoor setup` again.")
         return 1
 
-    print("\n  3. microphone permission")
-    print("     recording half a second. macOS will ask once, say yes.")
-    try:
-        from . import capture
-
-        info = capture.record(0.6, str(config.DATA_DIR / ".setup-check.wav"))
-        (config.DATA_DIR / ".setup-check.wav").unlink(missing_ok=True)
-        if info["peak"] == 0:
-            print("     got silence. Grant access in System Settings > Privacy > Microphone.")
-            problems.append("microphone")
-        else:
-            vp = "with Apple voice processing" if info["voice_processing"] else "raw"
-            print(f"     captured {info['channels']} channel(s) {vp}  ok")
-    except Exception as exc:
-        print(f"     failed: {type(exc).__name__}: {exc}")
-        print("     grant access in System Settings > Privacy & Security > Microphone")
-        problems.append("microphone")
-
-    print("\n  4. models (about 3 GB, downloaded once, then offline forever)")
+    print("\n  3. models (about 3 GB, downloaded once, then offline forever)")
     if args.skip_models:
         print("     skipped. They download on first use instead.")
     else:
@@ -485,7 +467,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
             print("     they will retry on first use; check your connection")
             problems.append("models")
 
-    print("\n  5. schedule")
+    print("\n  4. schedule")
     try:
         for line in schedule.install():
             print(f"     {line}")
