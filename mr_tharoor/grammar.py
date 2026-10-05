@@ -323,7 +323,7 @@ def summarise(findings: list[GrammarFinding], limit: int = 8) -> list[dict]:
 # --------------------------------------------------------------------------
 
 LLM_CLI = os.environ.get("MR_THAROOR_LLM", "")  # claude | codex; empty = first one installed
-LLM_MODEL = os.environ.get("MR_THAROOR_LLM_MODEL", "")  # empty = haiku for claude, codex's default
+LLM_MODEL = os.environ.get("MR_THAROOR_LLM_MODEL", "")  # empty = haiku for claude, gpt-6-luna for codex
 LLM_BATCH = 20  # utterances per call
 LLM_MAX_BATCHES = 12  # a day cannot cost more than this
 LLM_TIMEOUT = 420  # seconds per call; the nightly job has all night
@@ -397,9 +397,9 @@ def _run_llm(prompt: str) -> str:
         # --ephemeral: no session file. --ignore-user-config: no MCP servers
         # (auth survives it). Read-only: the reply is text, nothing to run.
         command = [binary, "exec", "--skip-git-repo-check", "--ephemeral",
-                   "--ignore-user-config", "-s", "read-only", prompt]
-        if LLM_MODEL:
-            command[2:2] = ["-m", LLM_MODEL]
+                   "--ignore-user-config", "-s", "read-only",
+                   "-m", LLM_MODEL or "gpt-6-luna",  # Codex's affordable model, the Haiku of the pair
+                   "-c", "model_reasoning_effort=low", prompt]
     else:
         # No tools, no settings, a one-line system prompt. Measured: Claude
         # Code's own coding prompt and tool list cost 26,600 tokens a call
@@ -411,6 +411,7 @@ def _run_llm(prompt: str) -> str:
     result = subprocess.run(
         command,
         capture_output=True, text=True, timeout=LLM_TIMEOUT, cwd=str(workdir),
+        stdin=subprocess.DEVNULL,  # codex exec reads a piped stdin as more prompt and waits
         env=_environment(),
     )
     if result.returncode != 0:
