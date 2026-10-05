@@ -38,6 +38,8 @@ cheaper answer is also the more private one.
 
 from __future__ import annotations
 
+import re
+import subprocess
 from dataclasses import dataclass
 
 from . import micgate
@@ -207,15 +209,32 @@ def dictating() -> str | None:
     return sorted(present)[0] if present else None
 
 
-def frontmost() -> str | None:
-    """Bundle id of the app in front. About a microsecond, no permissions."""
-    try:
-        from AppKit import NSWorkspace
+def frontmost_app() -> tuple[int, str] | None:
+    """(pid, bundle id) of the app you are using, from LaunchServices.
 
-        app = NSWorkspace.sharedWorkspace().frontmostApplication()
-        return app.bundleIdentifier() if app else None
-    except Exception:
+    Two methods that look right and are not, both measured on this Mac:
+    NSWorkspace.frontmostApplication is refreshed by an event loop the
+    listener does not run, so it answered with whichever app was in front
+    when the listener started -- all day. The window list puts Stage
+    Manager's own windows on top, so it answered "WindowManager". lsappinfo
+    asks LaunchServices, which is the authority, in ~30 ms.
+    """
+    try:
+        asn = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True,
+                             timeout=2).stdout.strip()
+        info = subprocess.run(["lsappinfo", "info", "-only", "bundleid", "-only", "pid", asn],
+                              capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.TimeoutExpired):
         return None
+    pid = re.search(r'"pid"=(\d+)', info)
+    bundle = re.search(r'"CFBundleIdentifier"="([^"]*)"', info)
+    return (int(pid.group(1)), bundle.group(1) if bundle else "") if pid else None
+
+
+def frontmost() -> str | None:
+    """Bundle id of the app in front."""
+    front = frontmost_app()
+    return front[1] if front else None
 
 
 def playing_media(front: str | None = None) -> str | None:

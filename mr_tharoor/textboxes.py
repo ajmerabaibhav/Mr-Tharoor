@@ -26,8 +26,8 @@ What it refuses to read, before the text is ever fetched:
 What is scrubbed before it touches the disk: email addresses, links, long
 numbers (cards, phones, OTPs) and key-shaped tokens.
 
-Off until you grant Accessibility to the Python that runs the listener;
-removing it there switches this off again. Files go with everything else,
+Off until you grant Accessibility to the Python that runs the listener
+and restart it (`tharoor install`); removing it there switches this off. Files go with everything else,
 KEEP_DAYS later.
 """
 
@@ -193,28 +193,44 @@ def trusted(prompt: bool = False) -> bool:
     return bool(AS.AXIsProcessTrusted())
 
 
+_skipped: set[tuple[str, str]] = set()
+
+
+def _skip(bundle: str, reason: str) -> None:
+    """Remember why a box was not read, once per app and reason. Never the text."""
+    _skipped.add((bundle, reason))
+
+
 def focused() -> tuple[object, str, str] | None:
     """(element, app bundle id, text) of the box you are typing in, or None
     whenever reading it would be unsafe or pointless."""
     import ApplicationServices as AS
-    from AppKit import NSWorkspace
 
-    app = NSWorkspace.sharedWorkspace().frontmostApplication()
-    bundle = (app.bundleIdentifier() or "") if app else ""
+    from . import context
+
+    # Asked of the front app, not the system-wide element: the system-wide
+    # focus query answers -25204 to a background process even when trusted.
+    front = context.frontmost_app()
+    if front is None:
+        return None
+    pid, bundle = front
     if not bundle or bundle in config.TYPING_BLOCKED or _secure_input():
         return None
-    root = AS.AXUIElementCreateApplication(app.processIdentifier())
+    root = AS.AXUIElementCreateApplication(pid)
     element = _attribute(root, "AXFocusedUIElement")
     if element is None:
         # Electron apps (Slack, Notion, Discord) build their tree only when
         # an assistive app asks for it, through this documented flag.
         AS.AXUIElementSetAttributeValue(root, "AXManualAccessibility", True)
+        _skip(bundle, "no focused element")
         return None
     role, subrole = _attribute(element, "AXRole"), _attribute(element, "AXSubrole")
     if role not in READABLE or "AXSecureTextField" in (role, subrole):
+        _skip(bundle, f"role {role}/{subrole}")
         return None
     value = _attribute(element, "AXValue")
     if not isinstance(value, str) or len(value) > MAX_FIELD:
+        _skip(bundle, f"value {type(value).__name__} {len(value) if isinstance(value, str) else ''}")
         return None
     return element, bundle, str(value)
 
@@ -228,20 +244,22 @@ def watch(stop: threading.Event, logger) -> None:
         if not trusted(prompt=not asked.exists()):
             asked.touch()
             logger.info("typing capture off: grant Accessibility to the Python running the listener "
-                        f"({os.path.realpath(sys.executable)}), then it starts by itself")
-            while not stop.wait(60) and not trusted():
-                pass
-            if stop.is_set():
-                return
+                        f"({os.path.realpath(sys.executable)}), then run `tharoor install` to restart it "
+                        "(macOS only tells a process about the permission when it starts)")
+            return
         logger.info("typing capture on (Accessibility granted)")
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"typing capture unavailable: {type(exc).__name__}: {exc}")
         return
 
     box: Box | None = None
+    logged: set = set()
     while not stop.wait(POLL):
         try:
             now = focused()
+            for bundle, reason in _skipped - logged:
+                logger.info(f"typing capture skipped {bundle}: {reason}")
+            logged |= _skipped
             if box and (now is None or not CF.CFEqual(now[0], box.key)):
                 write(box.app, box.commit(""))
                 box = None
