@@ -23,6 +23,14 @@ macOS. He never opens your microphone, and your audio never leaves the laptop.
 > *plural noun requires plural verb*
 > &nbsp;&nbsp;&nbsp;&nbsp;"...find the people that is actually building and in consumer AI startup..."
 
+## What you need
+
+- **A Mac** and **Python 3.10 or newer**.
+- **Claude Code or Codex**, installed and logged in. The grammar check runs
+  through it once a night, on your own plan; nothing else to pay for.
+- **Wispr Flow** (optional). It is where he hears you speak. Without it you
+  get grammar lessons only, no pronunciation.
+
 ## Install
 
 ```bash
@@ -38,6 +46,14 @@ To have him read what you type outside Claude Code and Codex, allow the Python
 that `tharoor setup` names under **System Settings › Privacy & Security ›
 Accessibility**, then run `tharoor install` once more.
 
+## A day with him
+
+1. **All day** you type and dictate as usual. He reads quietly in the background.
+2. **23:30** he checks the day: grammar on what you wrote and said, and the
+   sounds in your Wispr recordings.
+3. **08:30** a page opens in your browser: each mistake, the correct version,
+   one word on why, and your own voice next to a native speaker's.
+
 Type `tharoor` on its own any time to see what he does and what is running:
 
 <img src="docs/terminal.png" width="640" alt="tharoor in the terminal: the pixel-art portrait, what he does, live status and commands">
@@ -50,7 +66,7 @@ Type `tharoor` on its own any time to see what he does and what is running:
 | **Claude Code and Codex** | what you typed, from their own history. Grammar only. Pastes, commands and tool output excluded. |
 | **The text box you are typing in** | Mail, Slack, ChatGPT, Notes, a browser. Grammar only. Read through Accessibility like a screen reader, never keystrokes. Never reads password fields, single-line boxes (URL bars, search, logins), password managers, terminals or private chats, and nothing at all while macOS Secure Input is on. Pastes are dropped; emails, links and long numbers are scrubbed before they are saved. Off until you allow it under Accessibility (see Install). |
 
-## What he does with it
+## How it works, for the curious
 
 ```
 the sounds you MADE   wav2vec2-espeak, on your machine, no language model
@@ -82,13 +98,11 @@ is dropped. Nothing else stands between you and an invented mistake.
 
 ## What he will not claim
 
-- **Meetings are never recorded.** Dictation during a meeting is covered like
-  any other; live meeting speech is not. Measured: a shared microphone is 4.5x
-  quieter, and with no speaker filter it scored the other person as you.
-- **He never opens the microphone.** Speech comes only from Wispr Flow, when
-  you choose to dictate. His own mic was 3.1 dB on an ordinary day against
-  24.0 dB through Wispr, and switching it on in every browser was not worth it.
-  No dictation, no pronunciation lesson.
+- **He never opens the microphone, so meetings are never recorded.** Speech
+  comes only from Wispr Flow, when you choose to dictate. No dictation, no
+  pronunciation lesson. (Measured: his own mic was 3.1 dB on an ordinary day
+  against 24.0 dB through Wispr, and in a meeting it scored the other person
+  as you.)
 - **Progress needs a week and says so.** The seven-day strip divides by how
   much you actually produced and calls anything inside the noise band exactly
   that: nothing proved.

@@ -44,7 +44,7 @@ JOBS = {
         "args": ["listen"],
         "resident": True,  # starts at login and stays up
         "battery_safe": True,  # 8.3 seconds of CPU across a whole day
-        "what": "listen, context-aware, all day",
+        "what": "reads your typing, all day; never the mic",
     },
     "com.tharoor.nightly": {
         "args": ["analyse-pending", "--force"],
@@ -52,7 +52,7 @@ JOBS = {
         "minute": 30,
         "retry": True,
         "battery_safe": True,  # no wake assertion; catches up while the Mac is awake
-        "what": "analyse the day's speech",
+        "what": "check the day's grammar and pronunciation",
     },
     "com.tharoor.morning": {
         "args": ["morning", "--automatic"],
