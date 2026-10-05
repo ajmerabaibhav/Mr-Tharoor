@@ -2,7 +2,7 @@
 
 The portrait is pixel art drawn with half blocks: each character cell is two
 pixels, the top one in the foreground colour and the bottom in the background,
-so a 16x18 grid prints as 16x9 characters.
+so a 24x28 grid prints as 24x14 characters.
 """
 
 from __future__ import annotations
@@ -11,30 +11,41 @@ import os
 import sys
 
 ART = [
-    "....HHHHHHHH....",
-    "...HHHHHHHHHH...",
-    "..HHHHHHHHHHHH..",
-    "..XHSSSSSSSSHX..",
-    "..XSDDDSSDDDSX..",
-    ".SSSSSSSSSSSSSS.",
-    ".SSSDDSSSSDDSSS.",
-    "..SSSSSSNSSSSS..",
-    "..SSSSSNNSSSSS..",
-    "..SSDSSSSSSDSS..",
-    "...SSDDDDDDSS...",
-    "....SSSSSSSS....",
-    "......SSSS......",
-    "...KKKKKKKKKK...",
-    ".KKKKKKLLKKKKKK.",
-    "KKKKKKKPLKKKKKKK",
-    "KKKKKKKLLKKKKKKK",
-    "KKKKKKKPLKKKKKKK",
+    "........OOOOOOOO........",
+    "......OOHHHHHHHHOO......",
+    ".....OHHHHhHHHhHHHO.....",
+    "....OHHHHhHHHhHHHHHO....",
+    "....OHHHhHHHhHHHHHHO....",
+    "...OXHHHSSSSSSSSHHHXO...",
+    "...OXHSSSSSSSSSSSSHXO...",
+    "...OXSSOOOSSSSOOOSSXO...",
+    "..OsSSSSSSSSSSSSSSSSsO..",
+    "..OsSSSOSSSSSSSSOSSSsO..",
+    "..OsSSOSOSSSSSSOSOSSsO..",
+    "...OSSllSSSSsSSSllSSO...",
+    "...OSSSSSSSssSSSSSSSO...",
+    "...OSSSOSSSSSSSSOSSSO...",
+    "...OSSSSOTTTTTTOSSSSO...",
+    "....OSSSSOOOOOOSSSSO....",
+    ".....OSSSSSSSSSSSSO.....",
+    "......OOSSSSSSSSOO......",
+    ".........OsSSsO.........",
+    ".....OOKKKOssOKKKOO.....",
+    "..OkKKKKKKKkkKKKKKKKkO..",
+    ".OkKKKKKKKKPkKKKKKKKKkO.",
+    "OkKKkKKKKKKkkKKKKKKkKKkO",
+    "OkKKkKKKKKKkkKKKKKKkKKkO",
+    "OkKKkKKKKKKPkKKKKKKkKKkO",
+    "OkKKkKKKKKKkkKKKKKKkKKkO",
+    "OkKKkKKKKKKkkKKKKKKkKKkO",
+    "OkKKkKKKKKKPkKKKKKKkKKkO",
 ]
 # The approved portrait (report.PORTRAIT): swept-back hair going silver at the
-# temples, heavy brows, smiling eyes, a light purple kurta with buttons.
+# temples, heavy brows, smiling eyes, a broad smile, a light purple kurta.
 PALETTE = {
-    "H": (30, 26, 24), "X": (189, 182, 174), "S": (176, 116, 80), "N": (142, 90, 58),
-    "D": (31, 26, 23), "K": (201, 182, 228), "L": (169, 148, 204), "P": (91, 69, 128),
+    "O": (31, 26, 23), "H": (42, 36, 32), "h": (84, 76, 70), "X": (189, 182, 174),
+    "S": (176, 116, 80), "s": (142, 90, 58), "l": (201, 140, 100), "T": (244, 238, 226),
+    "K": (201, 182, 228), "k": (169, 148, 204), "P": (91, 69, 128),
 }
 
 
@@ -94,7 +105,7 @@ def show() -> int:
         "dictate, then every morning hands you one",
         "page: what you said, what to say, and why.",
     ]
-    art = portrait() if colour else [" " * 16] * 9
+    art = portrait() if colour else [" " * 24] * (len(ART) // 2)
     print()
     for i, line in enumerate(art):
         print(f"  {line}   {beside[i] if i < len(beside) else ''}")
