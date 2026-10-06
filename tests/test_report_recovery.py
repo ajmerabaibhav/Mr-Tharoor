@@ -161,3 +161,24 @@ def test_model_computation_error_is_not_retried_as_download():
 
     with pytest.raises(RuntimeError, match="incompatible"):
         listen._cached_first(loader, "model")
+
+
+def test_day_whose_grammar_failed_offline_is_redone_once_online(monkeypatch):
+    # 5 Oct: lid shut mid-run, the grammar call ran in DarkWake with no network,
+    # and the day was marked done with every typed message unchecked.
+    yesterday = date.today() - timedelta(days=1)
+    for back in range(0, 4):
+        day = date.today() - timedelta(days=back)
+        config.write_json_atomically(config.REPORTS_DIR / f"{day}-analysis.json", {
+            "version": 2, "completed_at": (datetime.combine(day, time(23, 30)) if back == 0
+                                           else datetime.now() - timedelta(hours=2)).isoformat(),
+            "grammar_failed": ["typed"] if day == yesterday else []})
+    monkeypatch.setattr(report, "repair_exports", lambda day, completed: True)
+    calls = []
+    monkeypatch.setattr(cli, "cmd_analyse_day", lambda args: calls.append(args.day) or 0)
+    monkeypatch.setattr(cli, "_online", lambda: False)
+    cli.cmd_analyse_pending(argparse.Namespace(force=True))
+    assert calls == [], "re-ran with no network"
+    monkeypatch.setattr(cli, "_online", lambda: True)
+    cli.cmd_analyse_pending(argparse.Namespace(force=True))
+    assert calls == [str(yesterday)]

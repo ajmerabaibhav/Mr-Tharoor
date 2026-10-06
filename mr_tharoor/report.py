@@ -201,7 +201,7 @@ def _grammar_html(habits: list[dict], name: str = "") -> str:
          "From your dictation and reading audio, marked against the raw transcript. "
          "Listen to the recording before you accept a correction: a recogniser can mishear."),
         (typed_rows, "What you typed",
-         "From what you typed into Claude Code or Codex. Pastes, commands and tool output are excluded."),
+         "From what you typed into Claude Code, Codex and other apps' text boxes. Pastes, commands and tool output are excluded."),
     ):
         if not rows:
             continue

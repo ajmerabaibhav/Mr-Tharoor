@@ -10,7 +10,7 @@ Two engines live here.
                           Local, free, and measured: across a month of real
                           dictation they found nothing at all.
 
-    llm_check()           the Claude Code CLI (or, without it, OpenAI's Codex
+    llm_check()           the Claude Code CLI (or, without it or when it fails, OpenAI's Codex
                           CLI) already installed on this machine, given the
                           day's raw transcripts. On one real day: 23
                           corrections where the rules found 0.
@@ -352,17 +352,24 @@ TYPED_CAVEAT = ("This is typed, often into a terminal or a chat box, so missing 
 KINDS = {"article", "preposition", "number", "verb", "tense", "word-order", "pronoun", "phrase"}
 
 
-def llm_binary() -> str | None:
-    """launchd's PATH is four directories long. Find the CLI ourselves."""
+def llm_binaries() -> list[str]:
+    """Every grammar CLI installed, Claude first. launchd's PATH is four
+    directories long, so we look ourselves."""
+    found: list[str] = []
     for name in [LLM_CLI] if LLM_CLI else ["claude", "codex"]:
-        found = shutil.which(name)
-        if found:
-            return found
+        path = shutil.which(name)
         for folder in (Path.home() / ".local/bin", Path("/opt/homebrew/bin"), Path("/usr/local/bin")):
             candidate = folder / name
-            if candidate.is_file() and os.access(candidate, os.X_OK):
-                return str(candidate)
-    return None
+            if not path and candidate.is_file() and os.access(candidate, os.X_OK):
+                path = str(candidate)
+        if path:
+            found.append(path)
+    return found
+
+
+def llm_binary() -> str | None:
+    binaries = llm_binaries()
+    return binaries[0] if binaries else None
 
 
 def llm_name() -> str:
@@ -388,9 +395,21 @@ def _run_llm(prompt: str) -> str:
     """
     from . import config
 
-    binary = llm_binary()
-    if not binary:
+    binaries = llm_binaries()
+    if not binaries:
         return ""
+    # Claude logged out (or out of credit) should not cost the night's grammar
+    # when Codex is installed and signed in, and the other way round.
+    for n, binary in enumerate(binaries):
+        try:
+            return _call_llm(binary, prompt, config)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            if n == len(binaries) - 1:
+                raise
+    return ""
+
+
+def _call_llm(binary: str, prompt: str, config) -> str:
     workdir = config.DATA_DIR / "llm"
     workdir.mkdir(parents=True, exist_ok=True)
     if Path(binary).name == "codex":
@@ -419,6 +438,8 @@ def _run_llm(prompt: str) -> str:
         # "Not logged in" hid behind one for two nights.
         raise RuntimeError(((result.stderr or "") + (result.stdout or "")).strip()[-300:]
                            or f"{Path(binary).name} exited non-zero")
+    if len(result.stdout) < 200 and "not logged in" in result.stdout.lower():
+        raise RuntimeError(result.stdout.strip())  # some versions say it and exit 0
     return result.stdout
 
 
@@ -533,8 +554,13 @@ def merge(llm: list[GrammarFinding], rules: list[GrammarFinding]) -> list[Gramma
     return llm + extra
 
 
-def llm_check(items: list[tuple[str, str]], mode: str = "spoken", *, logger=None) -> list[GrammarFinding]:
-    """Grammar over a day's utterances. `items` is [(source label, text), ...]."""
+def llm_check(items: list[tuple[str, str]], mode: str = "spoken", *, logger=None,
+              failed: list | None = None) -> list[GrammarFinding]:
+    """Grammar over a day's utterances. `items` is [(source label, text), ...].
+
+    A call that fails appends `mode` to `failed`, so the caller can mark the
+    day unfinished instead of publishing a page that silently skipped it.
+    """
     items = [(source, text) for source, text in items if len(_words(text)) >= 4]
     if not items or not llm_available():
         return []
@@ -557,6 +583,8 @@ def llm_check(items: list[tuple[str, str]], mode: str = "spoken", *, logger=None
         except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
             if logger:
                 logger.warning(f"grammar check failed ({mode}): {type(exc).__name__}: {exc}")
+            if failed is not None:
+                failed.append(mode)
             break
         found = parse_llm(reply, batch, mode)
         if not found and reply.strip() and logger:

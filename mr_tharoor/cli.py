@@ -642,10 +642,11 @@ def _analyse_day(args: argparse.Namespace) -> int:
         # run -- a rule never has an off night.
         rules = [f for label, text in spoken_texts for f in grammar.check(text, label, "spoken")]
         rules += [f for label, text in typed_texts for f in grammar.check(text, label, "typed")]
+        grammar_failed: list[str] = []
         if grammar.llm_available():
             print(f"  checking grammar on {len(spoken_texts)} utterances and {len(typed_texts)} messages")
-            found = grammar.llm_check(spoken_texts, "spoken", logger=logger)
-            found += grammar.llm_check(typed_texts, "typed", logger=logger)
+            found = grammar.llm_check(spoken_texts, "spoken", logger=logger, failed=grammar_failed)
+            found += grammar.llm_check(typed_texts, "typed", logger=logger, failed=grammar_failed)
             grammar_findings += grammar.merge(found, rules)
         else:
             logger.warning("neither Claude Code nor Codex CLI found; grammar falls back to local rules")
@@ -718,6 +719,9 @@ def _analyse_day(args: argparse.Namespace) -> int:
             "candidates": len(findings), "shown": len(selected),
             "grammar_engine": f"{grammar.llm_name()}-cli" if grammar.llm_available() else "local-rules",
             "grammar_found": len(grammar_findings),
+            # Lid shut mid-run wakes the Mac in DarkWake with no network (5 Oct).
+            # The page is still written for the morning; analyse-pending redoes the day.
+            "grammar_failed": grammar_failed,
         }
         written = report.write(findings, when, grammar=grammar_rows, analysis=analysis)
         analysis["outputs"] = sorted(written)
@@ -730,6 +734,16 @@ def _analyse_day(args: argparse.Namespace) -> int:
     for kind, path in written.items():
         print(f"  {kind}: {path}")
     return 0
+
+
+def _online() -> bool:
+    import socket
+
+    try:
+        socket.create_connection(("api.anthropic.com", 443), timeout=5).close()
+        return True
+    except OSError:
+        return False
 
 
 def cmd_analyse_pending(args: argparse.Namespace) -> int:
@@ -750,7 +764,11 @@ def cmd_analyse_pending(args: argparse.Namespace) -> int:
             try:
                 completed = json.loads(marker.read_text())
                 completed_at = datetime.fromisoformat(completed["completed_at"])
+                if completed.get("grammar_failed") and (
+                        now - completed_at < timedelta(hours=1) or not _online()):
+                    continue  # retried hourly once online; a logged-out CLI must not loop every 15 min
                 if (completed.get("version") == daily.ANALYSIS_VERSION
+                        and not completed.get("grammar_failed")
                         and (completed_at.date() > day or (day == now.date()
                              and (completed_at.hour, completed_at.minute) >= (23, 30)))):
                     from . import schedule
@@ -787,10 +805,11 @@ def _morning(args: argparse.Namespace) -> int:
 
     from . import daily, log, remind, report
 
+    from datetime import datetime
+
     automatic = getattr(args, "automatic", False)
     state_path = config.DATA_DIR / "morning.json"
     if automatic:
-        from datetime import datetime
         from . import micgate
 
         if not 8 <= datetime.now().hour < 21 or micgate.is_mic_in_use():
@@ -799,10 +818,31 @@ def _morning(args: argparse.Namespace) -> int:
     if day is None:
         print("  No completed report yet. Analysis will catch up at the next scheduled check.")
         return 0
+    marker = config.REPORTS_DIR / f"{day}-analysis.json"
+    try:
+        analysis = json.loads(marker.read_text())
+        complete = not analysis.get("grammar_failed")
+        redo_due = datetime.now() - datetime.fromisoformat(analysis["completed_at"]) >= timedelta(hours=1)
+    except (OSError, ValueError, KeyError):
+        complete, redo_due = True, False
+    if automatic:
+        # Waking at 9 or at 1 pm is the same: the catch-up job is still making
+        # yesterday's page, or about to redo a grammar check that ran with no
+        # network. Wait for it (both jobs tick every 15 min) instead of opening
+        # an older or half page. If the redo also fails (both CLIs logged out),
+        # its fresh completed_at ends the wait and the half page opens.
+        if day != _date.today() - timedelta(days=1):
+            print("  Yesterday is still being analysed; opening it when ready.")
+            return 0
+        if not complete and redo_due and _online():
+            print("  Yesterday's grammar is about to be redone; opening it when ready.")
+            return 0
     if automatic and state_path.exists():
         try:
             state = json.loads(state_path.read_text())
-            if state.get("opened_on") == str(_date.today()) and state.get("report_day") == str(day):
+            # Opened a half page (offline all morning)? Open again once it is whole.
+            if (state.get("opened_on") == str(_date.today()) and state.get("report_day") == str(day)
+                    and (state.get("complete", True) or not complete)):
                 return 0
         except (ValueError, TypeError):
             pass
@@ -833,7 +873,8 @@ def _morning(args: argparse.Namespace) -> int:
             )
         result = remind.run()
         if path:
-            config.write_json_atomically(state_path, {"opened_on": str(_date.today()), "report_day": str(day)})
+            config.write_json_atomically(state_path, {"opened_on": str(_date.today()), "report_day": str(day),
+                                                      "complete": complete})
     if path:
         print(f"  Good morning, {name}. Opened {path}")
     else:

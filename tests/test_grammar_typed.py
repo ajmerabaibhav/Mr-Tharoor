@@ -3,6 +3,8 @@
 import json
 from datetime import date, datetime, timezone
 
+import pytest
+
 from mr_tharoor import grammar, typed
 
 ITEMS = [("a", "the result which you have gave is not new"),
@@ -231,3 +233,20 @@ def test_typed_reads_codex_prompt_history(tmp_path, monkeypatch):
     ]) + "\n")
     out = typed.for_day(date(2026, 9, 20))
     assert [text for _, text in out] == ["can you tell me that whether it is good"]
+
+
+def test_logged_out_claude_falls_back_to_codex(monkeypatch):
+    monkeypatch.setattr(grammar, "llm_binaries", lambda: ["/x/claude", "/x/codex"])
+    tried = []
+
+    def call(binary, prompt, config):
+        tried.append(binary)
+        if binary.endswith("claude"):
+            raise RuntimeError("Not logged in · Please run /login")
+        return "codex reply"
+
+    monkeypatch.setattr(grammar, "_call_llm", call)
+    assert grammar._run_llm("p") == "codex reply"
+    monkeypatch.setattr(grammar, "_call_llm", lambda *a: (_ for _ in ()).throw(RuntimeError("down")))
+    with pytest.raises(RuntimeError):  # both fail: the day is marked unfinished and retried
+        grammar._run_llm("p")
