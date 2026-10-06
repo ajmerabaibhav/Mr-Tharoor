@@ -250,3 +250,12 @@ def test_logged_out_claude_falls_back_to_codex(monkeypatch):
     monkeypatch.setattr(grammar, "_call_llm", lambda *a: (_ for _ in ()).throw(RuntimeError("down")))
     with pytest.raises(RuntimeError):  # both fail: the day is marked unfinished and retried
         grammar._run_llm("p")
+
+
+def test_text_box_mistakes_are_not_crowded_out_by_chats():
+    chats = [{"mode": "typed", "source": f"2026-10-05-typed-56acc225-{n}", "said": f"c{n}"} for n in range(8)]
+    boxes = [{"mode": "typed", "source": f"2026-10-05-typed-ax-{n}", "said": f"b{n}"} for n in range(3)]
+    spoken = [{"mode": "spoken", "source": "2026-10-05-wispr-x", "said": "s"}]
+    shown = grammar.typed_rows(spoken + chats + boxes, 6)
+    assert [r["said"] for r in shown] == ["c0", "b0", "c1", "b1", "c2", "b2"]
+    assert len(grammar.typed_rows(chats, 6)) == 6  # no text boxes: chats fill the section

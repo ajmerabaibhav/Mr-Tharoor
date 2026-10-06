@@ -352,6 +352,20 @@ TYPED_CAVEAT = ("This is typed, often into a terminal or a chat box, so missing 
 KINDS = {"article", "preposition", "number", "verb", "tense", "word-order", "pronoun", "phrase"}
 
 
+def typed_rows(rows: list[dict], limit: int) -> list[dict]:
+    """The typing section, alternating chats with other apps' text boxes.
+
+    A busy Claude Code day filled all six rows and hid every Gmail mistake
+    (5 Oct), so the text-box capture looked broken when it was not.
+    """
+    from itertools import zip_longest
+
+    typed = [r for r in rows if r.get("mode") == "typed"]
+    boxes = [r for r in typed if "-typed-ax-" in (r.get("source") or "")]
+    chats = [r for r in typed if "-typed-ax-" not in (r.get("source") or "")]
+    return [r for pair in zip_longest(chats, boxes) for r in pair if r is not None][:limit]
+
+
 def llm_binaries() -> list[str]:
     """Every grammar CLI installed, Claude first. launchd's PATH is four
     directories long, so we look ourselves."""

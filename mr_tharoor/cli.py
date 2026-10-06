@@ -710,7 +710,7 @@ def _analyse_day(args: argparse.Namespace) -> int:
         # Capped per section, not overall: speech outnumbers typing most days,
         # and a single global cap silently emptied the typing half of the page.
         grammar_rows = ([r for r in rows if (r.get("mode") or "spoken") == "spoken"][:10]
-                        + [r for r in rows if r.get("mode") == "typed"][:6])
+                        + grammar.typed_rows(rows, 6))
         config.write_json_atomically(config.REPORTS_DIR / f"{when}-grammar.json", grammar_rows)
         added = remind.enqueue(selected, day=when)
         analysis = {
