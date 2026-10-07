@@ -332,7 +332,7 @@ PROMPT = """You are an exacting English teacher marking a fluent Indian English 
 
 Mark ONLY errors a grammar teacher would mark: subject-verb agreement, tense, articles, prepositions, singular/plural, verb form, word order, pronouns, countability, and fixed-phrase misuse ("discuss about", "revert back", "one of my friend").
 
-Do NOT mark: punctuation, capitalisation, spelling, filler words (um, yeah, so, like), repetition or self-correction, incomplete sentences, style, wordiness, register, or anything that is merely a different way of saying the same thing. {caveat}
+Do NOT mark: punctuation, capitalisation, spelling, filler words (um, yeah, so, like), repetition or self-correction, incomplete sentences, style, wordiness, register, or anything that is merely a different way of saying the same thing. Do NOT mark Indian English usage that is standard in India: "this side Rahul", "prepone", "do the needful", "a doubt" for a question, "out of station". {caveat}
 
 For each real error output ONE line of JSON and nothing else:
 {{"i": <item number>, "said": "<the exact 2-8 word span, copied verbatim from the item>", "should_be": "<the corrected span>", "kind": "<article|preposition|number|verb|tense|word-order|pronoun|phrase>", "label": "<ONE lowercase word naming the rule, the word a teacher would say: agreement, article, participle, plural, preposition, tense, order, pronoun, countable, idiom, possessive, comparative, infinitive, gerund>", "why": "<max 12 words, the rule>"}}
@@ -392,7 +392,10 @@ def llm_name() -> str:
 
 
 def llm_available() -> bool:
-    return not os.environ.get("MR_THAROOR_NO_LLM") and llm_binary() is not None
+    from . import config
+
+    return (not os.environ.get("MR_THAROOR_NO_LLM") and config.allowed("llm")
+            and llm_binary() is not None)
 
 
 def _normalised(text: str) -> str:

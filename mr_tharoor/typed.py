@@ -96,12 +96,18 @@ def for_day(day: date, exclude: list[str] | None = None) -> list[tuple[str, str]
         if not text or len(text) > MAX_CHARS or len(text.split()) < MIN_WORDS:
             return
         key = _plain(text)
-        if key in seen or any(key in utterance or utterance in key for utterance in spoken):
+        # `in k`, not `== k`: a text box saves a sentence of the message the
+        # chat's transcript also holds whole, and one mistake read twice
+        # showed as "2 times" (6 Oct, Claude desktop).
+        if any(key in k for k in seen) or any(key in utterance or utterance in key for utterance in spoken):
             return
         seen.add(key)
         out.append((label, text))
 
-    for transcript in sorted(PROJECTS.glob("*/*.jsonl")):
+    from . import config
+
+    chats = config.allowed("chats")
+    for transcript in sorted(PROJECTS.glob("*/*.jsonl")) if chats else []:
         if "mr-tharoor" in transcript.parent.name or "mr_tharoor" in transcript.parent.name:
             continue
         if datetime.fromtimestamp(transcript.stat().st_mtime).date() < day - timedelta(days=1):
@@ -126,7 +132,7 @@ def for_day(day: date, exclude: list[str] | None = None) -> list[tuple[str, str]
         codex = CODEX_HISTORY.read_text(errors="replace").splitlines()
     except OSError:
         codex = []
-    for number, line in enumerate(codex):
+    for number, line in enumerate(codex if chats else []):
         try:
             row = json.loads(line)
             when = datetime.fromtimestamp(row["ts"]).date()

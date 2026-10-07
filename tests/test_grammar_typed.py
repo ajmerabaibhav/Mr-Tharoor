@@ -259,3 +259,43 @@ def test_text_box_mistakes_are_not_crowded_out_by_chats():
     shown = grammar.typed_rows(spoken + chats + boxes, 6)
     assert [r["said"] for r in shown] == ["c0", "b0", "c1", "b1", "c2", "b2"]
     assert len(grammar.typed_rows(chats, 6)) == 6  # no text boxes: chats fill the section
+
+
+def test_text_box_sentence_already_in_a_chat_is_counted_once(tmp_path, monkeypatch):
+    # 6 Oct: the Claude app's box and its transcript both held one message,
+    # and its single mistake showed as "2 times".
+    from mr_tharoor import textboxes
+
+    message = "can you check that wether this thing i can isntalled in a smart kiosk or not"
+    folder = tmp_path / "proj"
+    folder.mkdir()
+    (folder / "s.jsonl").write_text(json.dumps({
+        "type": "user", "timestamp": datetime.now(timezone.utc).isoformat(),
+        "message": {"content": message + ". and also tell me why"}}) + "\n")
+    monkeypatch.setattr(typed, "PROJECTS", tmp_path)
+    monkeypatch.setattr(typed, "CODEX_HISTORY", tmp_path / "none")
+    monkeypatch.setattr(textboxes, "for_day", lambda day: [("app", message + ".")])
+    assert len(typed.for_day(date.today())) == 1
+
+
+def test_setup_answers_are_obeyed(tmp_path, monkeypatch):
+    from mr_tharoor import config
+
+    monkeypatch.setattr(grammar, "llm_binary", lambda: "/bin/echo")
+    monkeypatch.delenv("MR_THAROOR_NO_LLM", raising=False)
+    assert config.allowed("chats") and grammar.llm_available()  # no answers yet: as before
+    config.write_json_atomically(config.DATA_DIR / "consent.json", {"chats": False, "llm": False})
+    assert not grammar.llm_available()
+    folder = tmp_path / "proj"
+    folder.mkdir()
+    (folder / "s.jsonl").write_text(json.dumps({
+        "type": "user", "timestamp": datetime.now(timezone.utc).isoformat(),
+        "message": {"content": "please read this chat message if you are allowed to"}}) + "\n")
+    monkeypatch.setattr(typed, "PROJECTS", tmp_path)
+    monkeypatch.setattr(typed, "CODEX_HISTORY", tmp_path / "none")
+    from mr_tharoor import textboxes
+
+    monkeypatch.setattr(textboxes, "for_day", lambda day: [])
+    assert typed.for_day(date.today()) == []
+    config.write_json_atomically(config.DATA_DIR / "consent.json", {"chats": True, "llm": False})
+    assert len(typed.for_day(date.today())) == 1  # the same file is read once allowed

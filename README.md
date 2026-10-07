@@ -39,8 +39,14 @@ cd mr-tharoor && pip install -e . && tharoor setup
 ```
 
 `tharoor setup` checks the machine, downloads the phoneme model (~1.3 GB,
-once) and installs three background jobs. Then type and dictate normally.
-That is the whole interaction.
+once), asks two questions and installs three background jobs. Then type and
+dictate normally. That is the whole interaction.
+
+The two questions, both default **no**: may he read what you type into
+Claude Code and Codex chats, and may he send the day's sentences to your
+Claude Code or Codex CLI once a night for the grammar check (no means a few
+local rules only, and nothing leaves the Mac). Run `tharoor setup` again to
+change your answers.
 
 To have him read what you type outside Claude Code and Codex, allow the Python
 that `tharoor setup` names under **System Settings › Privacy & Security ›
