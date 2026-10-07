@@ -81,7 +81,7 @@ def test_pending_repairs_missing_export_without_reanalysing(monkeypatch):
         (config.REPORTS_DIR / f"{date.today() - timedelta(days=back)}.html").unlink(missing_ok=True)
     monkeypatch.setattr(cli, "cmd_analyse_day", lambda args: pytest.fail("decoded completed audio again"))
     assert cli.cmd_analyse_pending(argparse.Namespace(force=True)) == 0
-    for back in range(1, 4):
+    for back in range(1, config.KEEP_DAYS + 1):  # older days are retention's to delete
         day = date.today() - timedelta(days=back)
         assert (config.REPORTS_DIR / f"{day}.html").exists(), f"no page rebuilt for {day}"
 
@@ -110,7 +110,10 @@ def test_pending_prioritises_yesterday_and_continues_after_failure(monkeypatch):
     calls = []
     monkeypatch.setattr(cli, "cmd_analyse_day", lambda args: calls.append(args.day) or 1)
     assert cli.cmd_analyse_pending(argparse.Namespace(force=True)) == 1
-    assert calls[:3] == [str(date.today() - timedelta(days=back)) for back in range(1, 4)]
+    kept = range(1, config.KEEP_DAYS + 1)  # daytime: yesterday and what retention still holds
+    assert calls[:len(kept)] == [str(date.today() - timedelta(days=back)) for back in kept]
+    # A day retention already deleted is never rebuilt (4 Oct, rebuilt on 7 Oct).
+    assert str(date.today() - timedelta(days=config.KEEP_DAYS + 1)) not in calls
 
 
 def test_daytime_preview_is_reanalysed_at_night(monkeypatch):

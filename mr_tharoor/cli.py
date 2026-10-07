@@ -757,6 +757,11 @@ def cmd_analyse_pending(args: argparse.Namespace) -> int:
     days = [now.date() - timedelta(days=n) for n in range(1, 4)]
     if (now.hour, now.minute) >= (23, 30):
         days.append(now.date())
+    # Only days retention still keeps. The 23:30 run on day T deletes
+    # everything before T - (KEEP_DAYS - 1); catching up an older day
+    # rebuilt the very report that had just been deleted, every 15 min (6-7 Oct).
+    last_purge = now.date() if (now.hour, now.minute) >= (23, 30) else now.date() - timedelta(days=1)
+    days = [d for d in days if d >= last_purge - timedelta(days=config.KEEP_DAYS - 1)]
     failed = False
     for day in days:
         marker = config.REPORTS_DIR / f"{day}-analysis.json"
