@@ -325,12 +325,19 @@ def summarise(findings: list[GrammarFinding], limit: int = 8) -> list[dict]:
 LLM_CLI = os.environ.get("MR_THAROOR_LLM", "")  # claude | codex; empty = first one installed
 LLM_MODEL = os.environ.get("MR_THAROOR_LLM_MODEL", "")  # empty = haiku for claude, gpt-6-luna for codex
 LLM_BATCH = 20  # utterances per call
+LLM_PASSES = 2  # each batch is checked this many times and the corrections merged
 LLM_MAX_BATCHES = 12  # a day cannot cost more than this
 LLM_TIMEOUT = 420  # seconds per call; the nightly job has all night
 
 PROMPT = """You are an exacting English teacher marking a fluent Indian English speaker's real {kind}. Each numbered item below is one {unit}.
 
-Mark ONLY errors a grammar teacher would mark: subject-verb agreement, tense, articles, prepositions, singular/plural, verb form, word order, pronouns, countability, and fixed-phrase misuse ("discuss about", "revert back", "one of my friend").
+Go through every sentence and mark EVERY error a grammar teacher would mark, including a missing "the" or "a" and a verb that does not agree: subject-verb agreement, tense, articles, prepositions, singular/plural, verb form, word order, pronouns, countability, and fixed-phrase misuse ("discuss about", "revert back", "one of my friend").
+
+Two errors this speaker makes often, and how to fix them:
+- Two auxiliaries in one question ("does it is working", "does the mic will be on"): the fix is the question form, "is it working", "will the mic be on". Never keep both.
+- A missing article before a noun phrase ("about whole thing", "what are different parts"): add it.
+
+Do NOT replace words that are already grammatical: "make a company" stays, "you again check" stays, "clear me" stays. A correction must fix an error, not choose a nicer word or a nicer order.
 
 Do NOT mark: punctuation, capitalisation, spelling, filler words (um, yeah, so, like), repetition or self-correction, incomplete sentences, style, wordiness, register, or anything that is merely a different way of saying the same thing. Do NOT mark Indian English usage that is standard in India: "this side Rahul", "prepone", "do the needful", "a doubt" for a question, "out of station". {caveat}
 
@@ -339,7 +346,7 @@ For each real error output ONE line of JSON and nothing else:
 
 The label matters: it is the one word the speaker should be able to say back when asked why the correction is right.
 
-No preamble, no markdown fences, no summary, no repeated corrections. If an item has no error, output nothing for it. Be strict: when in doubt, leave it out.
+No preamble, no markdown fences, no summary, no repeated corrections. If an item has no error, output nothing for it. Only mark what is actually ungrammatical.
 
 ITEMS:
 {items}"""
@@ -524,6 +531,25 @@ def _around(text: str, said: str, width: int = 150) -> str:
     return ("..." if start else "") + snippet + ("..." if start + width < len(text) else "")
 
 
+def merge_passes(first: list[GrammarFinding], second: list[GrammarFinding],
+                 items: list[tuple[str, str]]) -> list[GrammarFinding]:
+    """Both passes' corrections, one per error: two spans that overlap in the
+    same item ("clear few of" and "clear few of my doubts") are one mistake."""
+    texts = dict(items)
+
+    def where(f: GrammarFinding) -> tuple[int, int]:
+        start = texts.get(f.source, "").lower().find(f.said.lower())
+        return (start, start + len(f.said)) if start >= 0 else (-1, -1)
+
+    out = list(first)
+    for f in second:
+        a, b = where(f)
+        if not any(g.source == f.source and (g.said.lower() == f.said.lower() or (
+                a >= 0 and where(g)[0] < b and a < where(g)[1])) for g in out):
+            out.append(f)
+    return out
+
+
 def parse_llm(reply: str, items: list[tuple[str, str]], mode: str = "spoken") -> list[GrammarFinding]:
     """Believe a correction only when the span it quotes is really in the text."""
     out: list[GrammarFinding] = []
@@ -591,19 +617,24 @@ def llm_check(items: list[tuple[str, str]], mode: str = "spoken", *, logger=None
             caveat=SPOKEN_CAVEAT if mode == "spoken" else TYPED_CAVEAT,
             items=listing,
         )
-        try:
+        # MEASURED (8 Oct, the real 7 Oct day replayed): one pass found 10, 13
+        # and 15 corrections on three runs of the same text, each missing some
+        # the others caught. Two passes, merged, lose far less to one bad draw.
+        found, reply = [], ""
+        for _ in range(LLM_PASSES):
             try:
-                reply = _run_llm(prompt)
-            except subprocess.TimeoutExpired:
-                # The Mac slept through the call (24 and 27 Sep). Awake now; once more.
-                reply = _run_llm(prompt)
-        except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
-            if logger:
-                logger.warning(f"grammar check failed ({mode}): {type(exc).__name__}: {exc}")
-            if failed is not None:
-                failed.append(mode)
-            break
-        found = parse_llm(reply, batch, mode)
+                try:
+                    reply = _run_llm(prompt)
+                except subprocess.TimeoutExpired:
+                    # The Mac slept through the call (24 and 27 Sep). Awake now; once more.
+                    reply = _run_llm(prompt)
+            except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+                if logger:
+                    logger.warning(f"grammar check failed ({mode}): {type(exc).__name__}: {exc}")
+                if failed is not None:
+                    failed.append(mode)
+                return out + found
+            found = merge_passes(found, parse_llm(reply, batch, mode), batch)
         if not found and reply.strip() and logger:
             # An empty reply is normal; an empty reply that is not JSON at all
             # is the CLI telling us something, usually that it is logged out.

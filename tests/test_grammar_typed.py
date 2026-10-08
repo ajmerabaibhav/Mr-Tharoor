@@ -299,3 +299,12 @@ def test_setup_answers_are_obeyed(tmp_path, monkeypatch):
     assert typed.for_day(date.today()) == []
     config.write_json_atomically(config.DATA_DIR / "consent.json", {"chats": True, "llm": False})
     assert len(typed.for_day(date.today())) == 1  # the same file is read once allowed
+
+
+def test_two_passes_merge_one_mistake_once():
+    items = [("a", "so i want clear few of my doubts about whole thing today")]
+    f = lambda said, to: grammar.GrammarFinding(kind="article", said=said, should_be=to, context="", source="a")
+    first = [f("clear few of", "clear a few of")]
+    second = [f("clear few of my doubts", "clear a few of my doubts"), f("about whole thing", "about the whole thing")]
+    merged = grammar.merge_passes(first, second, items)
+    assert [m.said for m in merged] == ["clear few of", "about whole thing"]
