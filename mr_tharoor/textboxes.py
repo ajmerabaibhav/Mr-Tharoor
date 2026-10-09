@@ -26,7 +26,7 @@ What it refuses to read, before the text is ever fetched:
 What is scrubbed before it touches the disk: email addresses, links, long
 numbers (cards, phones, OTPs) and key-shaped tokens.
 
-Off until you grant Accessibility to the Python that runs the listener
+Off until you grant Accessibility to the Python that runs `tharoor listen`
 and restart it (`tharoor install`); removing it there switches this off. Files go with everything else,
 KEEP_DAYS later.
 """
@@ -201,16 +201,38 @@ def _skip(bundle: str, reason: str) -> None:
     _skipped.add((bundle, reason))
 
 
+def frontmost_app() -> tuple[int, str] | None:
+    """(pid, bundle id) of the app you are using, from LaunchServices.
+
+    Two methods that look right and are not, both measured on this Mac:
+    NSWorkspace.frontmostApplication is refreshed by an event loop this
+    process does not run, so it answered with whichever app was in front
+    when it started -- all day. The window list puts Stage Manager's own
+    windows on top, so it answered "WindowManager". lsappinfo asks
+    LaunchServices, which is the authority, in ~30 ms.
+    """
+    import subprocess
+
+    try:
+        asn = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True,
+                             timeout=2).stdout.strip()
+        info = subprocess.run(["lsappinfo", "info", "-only", "bundleid", "-only", "pid", asn],
+                              capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    pid = re.search(r'"pid"=(\d+)', info)
+    bundle = re.search(r'"CFBundleIdentifier"="([^"]*)"', info)
+    return (int(pid.group(1)), bundle.group(1) if bundle else "") if pid else None
+
+
 def focused() -> tuple[object, str, str] | None:
     """(element, app bundle id, text) of the box you are typing in, or None
     whenever reading it would be unsafe or pointless."""
     import ApplicationServices as AS
 
-    from . import context
-
     # Asked of the front app, not the system-wide element: the system-wide
     # focus query answers -25204 to a background process even when trusted.
-    front = context.frontmost_app()
+    front = frontmost_app()
     if front is None:
         return None
     pid, bundle = front
@@ -236,14 +258,14 @@ def focused() -> tuple[object, str, str] | None:
 
 
 def watch(stop: threading.Event, logger) -> None:
-    """The loop the listener runs on a side thread. Never raises."""
+    """The loop `tharoor listen` runs on a side thread. Never raises."""
     import CoreFoundation as CF
 
     asked = config.DATA_DIR / ".asked-accessibility"
     try:
         if not trusted(prompt=not asked.exists()):
             asked.touch()
-            logger.info("typing capture off: grant Accessibility to the Python running the listener "
+            logger.info("typing capture off: grant Accessibility to the Python running `tharoor listen` "
                         f"({os.path.realpath(sys.executable)}), then run `tharoor install` to restart it "
                         "(macOS only tells a process about the permission when it starts)")
             return

@@ -3,7 +3,7 @@
 import os
 from datetime import date, timedelta
 
-from mr_tharoor import config, streaks, textboxes, typed
+from mr_tharoor import config, textboxes, typed
 
 
 def type_into(box, text, start=""):
@@ -56,7 +56,7 @@ def test_reaches_the_nightly_typed_source_and_is_forgotten():
     textboxes.write("com.apple.mail", ["I have went through the document yesterday."], today)
     assert ("com.apple.mail", "I have went through the document yesterday.") in textboxes.for_day(today)
     assert any(t == "I have went through the document yesterday." for _, t in typed.for_day(today))
-    streaks.purge_expired(today + timedelta(days=config.KEEP_DAYS))
+    config.purge_expired(today + timedelta(days=config.KEEP_DAYS))
     assert textboxes.for_day(today) == []
 
 

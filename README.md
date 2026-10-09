@@ -4,7 +4,7 @@
 
 # Mr Tharoor
 
-**An English teacher who reads how you write and hears how you speak, then hands you a lesson every morning.**
+**An English teacher who reads how you write and what you dictate, then hands you a grammar lesson every morning.**
 
 </div>
 
@@ -12,10 +12,14 @@
 
 He reads what you type, in Gmail, Slack, Notes, ChatGPT or Claude Code, and
 what you dictate through Wispr Flow. He marks the grammar a teacher would mark,
-hears the sounds you get wrong, and at 08:30 a page opens on your desk: what
-you said, what to say instead, and the one word that tells you why.
+and at 08:30 a page opens on your desk: what you said, what to say instead,
+and the one word that tells you why.
 
-macOS. He never opens your microphone, and your audio never leaves the laptop.
+Every other English app makes you sit down and practise. This one grades how
+you actually wrote and spoke yesterday. It corrects grammar, never Indian
+English: "prepone", "do the needful" and "this side Baibhav" are not mistakes.
+
+macOS. He never opens your microphone and never touches audio.
 
 > **AGREEMENT**
 > You said ~~"the people that is actually building"~~
@@ -28,8 +32,8 @@ macOS. He never opens your microphone, and your audio never leaves the laptop.
 - **A Mac** and **Python 3.10 or newer**.
 - **Claude Code or Codex**, installed and logged in. The grammar check runs
   through it once a night, on your own plan; nothing else to pay for.
-- **Wispr Flow** (optional). It is where he hears you speak. Without it you
-  get grammar lessons only, no pronunciation.
+- **Wispr Flow** (optional). It is where he reads what you say. Without it
+  you get lessons from your typing only.
 
 ## Install
 
@@ -38,8 +42,8 @@ git clone https://github.com/ajmerabaibhav/Mr-Tharoor.git mr-tharoor
 cd mr-tharoor && pip install -e . && tharoor setup
 ```
 
-`tharoor setup` checks the machine, downloads the phoneme model (~1.3 GB,
-once), asks two questions and installs three background jobs. Then type and
+`tharoor setup` checks the machine, asks two questions and installs three
+background jobs. One small dependency, no model download. Then type and
 dictate normally. That is the whole interaction.
 
 The two questions, both default **no**: may he read what you type into
@@ -55,10 +59,10 @@ Accessibility**, then run `tharoor install` once more.
 ## A day with him
 
 1. **All day** you type and dictate as usual. He reads quietly in the background.
-2. **23:30** he checks the day: grammar on what you wrote and said, and the
-   sounds in your Wispr recordings.
+2. **23:30** he checks the day's grammar: what you wrote, and what you said
+   into Wispr Flow.
 3. **08:30** a page opens in your browser: each mistake, the correct version,
-   one word on why, and your own voice next to a native speaker's.
+   and one word on why.
 
 Type `tharoor` on its own any time to see what he does and what is running:
 
@@ -68,24 +72,22 @@ Type `tharoor` on its own any time to see what he does and what is running:
 
 | source | what it gives him |
 |---|---|
-| **Wispr Flow's database** | your dictation, in any app, with the audio already paired to the words you meant. Grammar *and* pronunciation. |
-| **Claude Code and Codex** | what you typed, from their own history. Grammar only. Pastes, commands and tool output excluded. |
-| **The text box you are typing in** | Mail, Slack, ChatGPT, Notes, a browser. Grammar only. Read through Accessibility like a screen reader, never keystrokes. Never reads password fields, single-line boxes (URL bars, search, logins), password managers, terminals or private chats, and nothing at all while macOS Secure Input is on. Pastes are dropped; emails, links and long numbers are scrubbed before they are saved. Off until you allow it under Accessibility (see Install). |
+| **Wispr Flow's database** | your dictation, in any app. Its raw transcript keeps your mistakes; its cleaned text has already fixed them, so it is used only to tell a mishearing from a slip. Text only, read from a read-only copy. |
+| **Claude Code and Codex** | what you typed, from their own history. Pastes, commands and tool output excluded. |
+| **The text box you are typing in** | Mail, Slack, ChatGPT, Notes, a browser. Read through Accessibility like a screen reader, never keystrokes. Never reads password fields, single-line boxes (URL bars, search, logins), password managers, terminals or private chats, and nothing at all while macOS Secure Input is on. Pastes are dropped; emails, links and long numbers are scrubbed before they are saved. Off until you allow it under Accessibility (see Install). |
 
 ## How it works, for the curious
 
 ```
-the sounds you MADE   wav2vec2-espeak, on your machine, no language model
-the words you MEANT   Wispr's own text
+the day's sentences   Wispr's raw transcripts + what you typed
         ↓
-pool by SOUND across every word carrying it, weighted by audio quality,
-report only when the lower bound of the credible interval clears the floor
-
-the grammar            one batched call a night to the CLI already installed here:
+a few local rules      certain, free, never have an off night
+        +
+two passes a night     batched calls to the CLI already installed here:
                        Claude Code (Haiku 4.5), or Codex (gpt-6-luna) if that is what you have
         ↓
-every correction must quote a span that is really in your transcript, or it
-is dropped. Nothing else stands between you and an invented mistake.
+every correction must quote a span that is really in your text, or it is
+dropped. Nothing else stands between you and an invented mistake.
 ```
 
 ## Commands
@@ -96,21 +98,20 @@ is dropped. Nothing else stands between you and an invented mistake.
 | `tharoor listen` | the background job: reads your typing. Never opens the microphone |
 | `tharoor analyse-day` | run tonight's job now |
 | `tharoor morning` | open the latest lesson |
-| `tharoor check` | judge his findings, so accuracy becomes a number |
-| `tharoor drill` | hear it, say it, hear it again |
 | `tharoor logs` | what the scheduled jobs actually did |
 | `tharoor install --status` | are the three agents really running |
 | `tharoor install --remove` | stop all of it |
 
 ## What he will not claim
 
-- **He never opens the microphone, so meetings are never recorded.** Speech
-  comes only from Wispr Flow, when you choose to dictate. No dictation, no
-  pronunciation lesson. (Measured: his own mic was 3.1 dB on an ordinary day
-  against 24.0 dB through Wispr, and in a meeting it scored the other person
-  as you.)
-- **Pronunciation accuracy on your voice is unmeasured.** `tharoor check` is
-  the only thing that turns it into a number. Nobody has run it yet.
+- **No pronunciation.** An earlier version scored your sounds from Wispr's
+  audio. It was never shown to be right on a real voice, so it was removed
+  rather than shipped as a guess.
+- **He never opens the microphone, so meetings are never heard.** Speech
+  comes only from Wispr Flow, when you choose to dictate.
+- **He can miss things.** On 16 real sentences (`tests/grammar_eval.py`) he
+  caught all 10 errors and marked none of the 6 Indian English traps, but a
+  quiet page means "nothing he could prove", not "perfect English".
 - **Text leaves the machine once a night** for the grammar call.
   It uses the Claude Code CLI, or OpenAI's Codex CLI if that is what you have
   (`MR_THAROOR_LLM=codex` to choose it when both are installed).
@@ -122,14 +123,13 @@ is dropped. Nothing else stands between you and an invented mistake.
 
 ## Privacy
 
-Audio never leaves the laptop. Everything stored about a day (recordings,
-clips, the report, your sentences, the tallies) deletes itself two nights
-later: Monday's data is gone on Wednesday night. He never opens the
-microphone. Typed text is read only from multi-line text boxes, never from
+No audio is read or stored. Everything stored about a day (the report, its
+corrections, what you typed) deletes itself two nights later: Monday's data
+is gone on Wednesday night. He never opens the microphone. Typed text is read only from multi-line text boxes, never from
 password fields, password managers, terminals or private chats, and emails,
-links and long numbers are scrubbed before it is saved. `data/`, `cache/`,
-`reports/` and `logs/` are gitignored; this repo contains no recordings and
-no one's sentences but the example above.
+links and long numbers are scrubbed before it is saved. `data/`,
+`reports/` and `logs/` are gitignored; this repo contains no one's sentences
+but the example above.
 
 ## Tests
 

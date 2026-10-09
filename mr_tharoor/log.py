@@ -12,8 +12,8 @@ Two sinks, on purpose:
                      when all is well
 
 Both structured enough to grep and plain enough to read without a tool. The
-log is also where the daily run records its own numbers -- how long, how much
-audio, how many findings -- which is what turns "it feels slow" into a fact.
+log is also where the daily run records its own numbers -- how long, how many
+messages, how many corrections -- which is what turns "it feels slow" into a fact.
 """
 
 from __future__ import annotations
@@ -32,10 +32,6 @@ LOG_DIR = config.ROOT / "logs"
 LOG_FILE = LOG_DIR / "mr-tharoor.log"
 MAX_BYTES = 2_000_000
 BACKUPS = 3
-
-# Written by the listener, counted by too_far(). Defined once, here, because
-# a marker spelled two ways is a counter that silently reads zero forever.
-TOO_FAR = "too far"
 
 _configured = False
 
@@ -119,24 +115,6 @@ def tail(lines: int = 40) -> str:
     if not LOG_FILE.exists():
         return "(nothing logged yet)"
     return "\n".join(LOG_FILE.read_text(errors="replace").splitlines()[-lines:])
-
-
-def too_far(day: date | None = None) -> int:
-    """Recordings thrown away that day because the microphone was too far.
-
-    Counted out of the log rather than kept in a file. The listener runs for
-    weeks without stopping, so a total it only writes on exit is a total
-    nobody ever reads, and the number is only useful while you can still
-    move the laptop.
-    """
-    if not LOG_FILE.exists():
-        return 0
-    stamp = (day or date.today()).isoformat()
-    return sum(
-        1
-        for line in LOG_FILE.read_text(errors="replace").splitlines()
-        if line.startswith(stamp) and f" {TOO_FAR}: " in line
-    )
 
 
 def health() -> dict:

@@ -1,8 +1,8 @@
 """Is another app using the microphone right now?
 
-This is the battery gate. Holding a capture stream open all day costs real
-power; asking CoreAudio a question costs microseconds. So the listener sleeps
-until this module says a call is actually happening.
+The morning lesson must not pop open in the middle of a call, and asking
+CoreAudio costs microseconds. So `tharoor morning --automatic` waits while
+this module says a call is happening.
 
 Primary path (macOS 14.2+): walk the audio process-object list and check
 kAudioProcessPropertyIsRunningInput on each, skipping our own PID. That tells

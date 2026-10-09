@@ -1,8 +1,8 @@
 """What you said and what you typed, against what a teacher would mark.
 
-Pronunciation is one habit. "Discuss about", "revert back", "I did not went",
-"the people that is building" -- those are the other habit, and they cost the
-same thing in a meeting: the listener has to work harder to follow you.
+"Discuss about", "revert back", "I did not went", "the people that is
+building" -- habits like these cost something in every meeting and email:
+the listener has to work harder to follow you.
 
 Two engines live here.
 

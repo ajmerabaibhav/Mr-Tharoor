@@ -3,21 +3,16 @@
 from __future__ import annotations
 
 import os
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(os.environ.get("MR_THAROOR_HOME", Path.home() / "mr-tharoor"))
 
-CACHE_DIR = ROOT / "cache"
-AUDIO_DIR = CACHE_DIR / "audio"
-INDEX_FILE = CACHE_DIR / "index.json"
-
-# Raw day audio and the reports built from it.
 DATA_DIR = ROOT / "data"
-CLIPS_DIR = DATA_DIR / "clips"
 REPORTS_DIR = ROOT / "reports"
 
-# Everything this tool stores about a day -- audio, clips, the page, your
-# sentences, the tallies -- is deleted on the night KEEP_DAYS later: a day
+# Everything this tool stores about a day -- the page, its corrections, what
+# you typed -- is deleted on the night KEEP_DAYS later: a day
 # is analysed that night, read the next morning, and gone the night after.
 # Nobody opening this laptop can scroll back through old mistakes.
 KEEP_DAYS = 2
@@ -36,17 +31,6 @@ TYPING_BLOCKED = frozenset({
     "org.whispersystems.signal-desktop", "ru.keepcoder.Telegram", "com.tdesktop.Telegram",
     "com.electron.wispr-flow",
 })
-
-# Wikimedia asks for a descriptive User-Agent on API traffic.
-USER_AGENT = "mr-tharoor/0.1 (personal pronunciation tool; local use)"
-NETWORK_TIMEOUT = 12
-
-# Which recording to prefer when Wiktionary has several.
-ACCENT_PREFERENCE = ("en-us", "en-uk", "en-au", "en-ca", "en")
-
-# macOS voice used only when no human recording exists for a word.
-FALLBACK_VOICE = "Samantha"
-
 
 def allowed(what: str) -> bool:
     """What `tharoor setup` asked: "chats" (read Claude Code and Codex
@@ -73,19 +57,38 @@ def user_name() -> str:
     except Exception:  # noqa: BLE001
         return "there"
 
-for _d in (AUDIO_DIR, CLIPS_DIR, REPORTS_DIR):
-    _d.mkdir(parents=True, exist_ok=True)
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def purge_expired(today: date | None = None) -> tuple[int, float]:
+    """Delete everything stored about expired days. Returns (files, megabytes).
+
+    Report pages and their JSON, and what textboxes.py saved of your typing.
+    Runs whether or not tonight's analysis does: a laptop on battery at
+    23:30 must still forget on time.
+    """
+    from datetime import timedelta
+
+    cutoff = ((today or date.today()) - timedelta(days=KEEP_DAYS - 1)).isoformat()
+    files = [f for f in REPORTS_DIR.glob("????-??-??*") if f.name[:10] < cutoff]
+    files += [f for f in (DATA_DIR / "typed").glob("????-??-??.jsonl") if f.name[:10] < cutoff]
+    removed, freed = 0, 0
+    for f in files:
+        try:
+            freed += f.stat().st_size
+            f.unlink()
+            removed += 1
+        except FileNotFoundError:
+            pass
+    return removed, round(freed / 1e6, 1)
 
 
 def write_json_atomically(path: Path, payload: object) -> None:
     """Write, then rename. Never truncate a good file to write a bad one.
 
     A plain write() leaves a half-file if the process dies, the disk fills, or
-    the laptop lid closes at the wrong moment. Both of this project's JSON
-    files are then unreadable, and the recovery path (return {}) silently
-    replaces the whole thing on the next save. For history.json that is
-    unrecoverable: the audio behind it is deleted after KEEP_DAYS, so the
-    tallies are the only surviving record.
+    the laptop lid closes at the wrong moment, and a torn report JSON is a
+    morning with no lesson.
 
     os.replace is atomic on the same filesystem, so a reader sees either the
     old file or the new one, never a torn one.

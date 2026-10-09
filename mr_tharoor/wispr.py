@@ -1,21 +1,16 @@
 """Read what Wispr Flow already recorded, instead of recording it again.
 
-Every dictation Wispr Flow takes is stored on this machine: the WAV, the raw
+Every dictation Wispr Flow takes is stored on this machine: the raw
 recogniser output, the LLM-cleaned text, and where you fixed it by hand, your
-fix. That is the exact pair this project needs -- clean close-mic audio plus
-the words you meant -- and it is better than anything our own capture
-produces, because the "words you meant" were worked out by a model that had
-the whole sentence in front of it, not a phoneme recogniser guessing.
-
-So for dictation, this is the primary source. Our own listener stays for the
-cases Wispr does not cover: a Google Meet, a WhatsApp call, reading aloud.
+fix. The raw text is what you actually said, grammar mistakes included --
+Wispr's cleaned text has already fixed them, so it is only used to tell a
+mishearing from a slip. This is the only source for speech.
 
     ~/Library/Application Support/Wispr Flow/flow.sqlite
         History
           asrText         what the machine heard
           formattedText   what you meant
           editedText      what you corrected it to, when you did
-          audio           the WAV, 16 kHz mono, exactly what the models want
           timestamp       UTC
           status          'formatted' is a good row
 
@@ -31,7 +26,6 @@ and the copy is what gets read.
 
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 import tempfile
@@ -39,13 +33,10 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from . import config
 
 DB_PATH = Path.home() / "Library" / "Application Support" / "Wispr Flow" / "flow.sqlite"
-CURSOR_FILE = config.DATA_DIR / "wispr_cursor.json"
-
 REQUIRED = {"transcriptEntityId", "asrText", "formattedText", "editedText",
-            "audio", "timestamp", "status", "app"}
+            "timestamp", "status", "app"}
 
 
 class SchemaChanged(RuntimeError):
@@ -62,11 +53,6 @@ class Dictation:
     meant: str  # LLM-cleaned, or your own edit if you made one
     edited: bool  # did you correct it by hand
     app: str
-    audio: bytes | None
-
-    @property
-    def has_audio(self) -> bool:
-        return bool(self.audio) and len(self.audio) > 1000
 
 
 def available() -> bool:
@@ -103,7 +89,7 @@ def _check_schema(conn: sqlite3.Connection) -> None:
     if missing:
         raise SchemaChanged(
             f"History is missing {sorted(missing)}; this reader was written for an "
-            f"older Wispr Flow. Update mr_tharoor/wispr.py or run the built-in listener."
+            f"older Wispr Flow. Update mr_tharoor/wispr.py."
         )
 
 
@@ -119,17 +105,16 @@ def _parse_time(raw: str) -> datetime:
     return parsed.astimezone()
 
 
-def dictations(since: datetime | None = None, with_audio: bool = True) -> list[Dictation]:
+def dictations(since: datetime | None = None) -> list[Dictation]:
     """Everything you dictated after `since`, oldest first."""
     snapshot = _snapshot()
     try:
         conn = sqlite3.connect(f"file:{snapshot}?mode=ro", uri=True)
         try:
             _check_schema(conn)
-            audio_column = "audio" if with_audio else "NULL"
             rows = conn.execute(
                 "SELECT transcriptEntityId, timestamp, asrText, formattedText, editedText, "
-                f"app, {audio_column} FROM History WHERE status = 'formatted' AND formattedText IS NOT NULL "
+                "app FROM History WHERE status = 'formatted' AND formattedText IS NOT NULL "
                 "ORDER BY timestamp ASC"
             ).fetchall()
         finally:
@@ -138,7 +123,7 @@ def dictations(since: datetime | None = None, with_audio: bool = True) -> list[D
         snapshot.unlink(missing_ok=True)
 
     out: list[Dictation] = []
-    for row_id, stamp, asr, formatted, edited, app, audio in rows:
+    for row_id, stamp, asr, formatted, edited, app in rows:
         when = _parse_time(stamp)
         if since and when <= since:
             continue
@@ -153,7 +138,6 @@ def dictations(since: datetime | None = None, with_audio: bool = True) -> list[D
                 meant=meant,
                 edited=bool((edited or "").strip()) and edited.strip() != (formatted or "").strip(),
                 app=app or "",
-                audio=bytes(audio) if (with_audio and audio) else None,
             )
         )
     return out
@@ -165,35 +149,12 @@ def for_day(day: date) -> list[Dictation]:
     return [d for d in dictations(since=start - timedelta(seconds=1)) if d.when < end]
 
 
-def cursor() -> datetime | None:
-    if not CURSOR_FILE.exists():
-        return None
-    try:
-        return datetime.fromisoformat(json.loads(CURSOR_FILE.read_text())["last"])
-    except (KeyError, ValueError, json.JSONDecodeError):
-        return None
-
-
-def advance_cursor(to: datetime) -> None:
-    config.write_json_atomically(CURSOR_FILE, {"last": to.isoformat()})
-
-
-def write_wav(dictation: Dictation, folder: Path) -> Path | None:
-    """Put the stored WAV where the analyser can read it."""
-    if not dictation.has_audio:
-        return None
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"wispr-{dictation.when:%H%M%S}-{dictation.id[:8]}.wav"
-    path.write_bytes(dictation.audio)
-    return path
-
-
 def health() -> dict:
     """For `tharoor setup` and `tharoor logs`: is this source usable right now."""
     if not DB_PATH.exists():
         return {"available": False, "reason": "Wispr Flow is not installed, or has no history yet"}
     try:
-        recent = dictations(with_audio=False)
+        recent = dictations()
     except SchemaChanged as exc:
         return {"available": False, "reason": str(exc)}
     except Exception as exc:  # noqa: BLE001

@@ -4,6 +4,25 @@ What changed, when, and what was measured. Newest first.
 The current state of the project is in [README.md](README.md); what is still
 broken or deferred is in [TODOS.md](TODOS.md).
 
+## Grammar only: pronunciation removed — 9 October 2026
+
+Pronunciation was never shown to work on a real voice: `tharoor check` was
+never run, and most nights it found zero or one sound. Shipping it meant
+leading with a claim nobody had measured, and it carried the whole install
+cost (torch, transformers, faster-whisper, a 1.3 GB model download). So it is
+gone, along with everything that only existed to serve it: the phoneme
+analysis, Wiktionary recordings, evidence pooling, reminder cards, the
+own-microphone listener and its mic tests.
+
+- Commands removed: `drill`, `say`, `look`, `check`, `score`, `probe`,
+  `analyse`, `mictest`, `selftest`, `remind`, `gate`, `cache`.
+- Dependencies: eleven down to one (`pyobjc-framework-ApplicationServices`).
+- Wispr is read as text only; its audio column is no longer selected or required.
+- `tharoor listen` now only runs the text-box reader.
+- The page is the lesson: corrections from speech and typing, the week strip,
+  and the processing summary. No audio is embedded.
+- Retention (`config.purge_expired`) now covers reports and typed text only.
+
 ## One word for the rule, the sound in letters, and a week's arithmetic — 22 September 2026
 
 Four changes, all of them about the page teaching rather than reporting.

@@ -1,5 +1,9 @@
 # What is not built, and what is known broken
 
+> **9 October 2026: pronunciation removed.** Every item below about sounds,
+> the phoneme model, `tharoor check`, the probe, clips or our own microphone
+> is history, not work. The code it refers to is gone; see the changelog.
+
 ## Three simulations against future data — 23 September 2026
 
 Three isolated runs (own `MR_THAROOR_HOME`, the real data untouched) played

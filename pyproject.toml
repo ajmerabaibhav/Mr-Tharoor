@@ -1,21 +1,11 @@
 [project]
 name = "mr-tharoor"
 version = "0.1.0"
-description = "An English teacher for macOS: reads how you write, hears how you speak, and hands you a lesson every morning."
+description = "An English teacher for macOS: reads how you write and what you dictate, and hands you a grammar lesson every morning."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
-    "sounddevice>=0.5",                  # microphone capture
-    "soundfile>=0.12",                   # reading and writing audio
-    "numpy>=1.24",                       # everything numeric
-    "cmudict>=1.0",                      # canonical pronunciations, offline
-    "torch>=2.0",                        # runs the phoneme model
-    "transformers>=4.30",                # loads wav2vec2-lv-60-espeak
-    "faster-whisper>=1.0",               # the words you meant
-    "huggingface-hub>=0.20",             # fetches both models
-    "pyobjc-framework-AVFoundation>=10",  # Apple voice processing, 3-mic array
-    "pyobjc-framework-Cocoa>=10",        # which app is in front
     "pyobjc-framework-ApplicationServices>=10",  # the text box you are typing in
 ]
 

@@ -10,13 +10,12 @@ and nothing needs a daemon sitting awake.
 
 Three agents, deliberately separate so one failing never takes the others out:
 
-    com.tharoor.listen    at login, stays resident, sleeps until there is
-                        something to hear. ~9 seconds of CPU across a 14 hour
-                        day. Restarted if it dies, throttled so a crash loop
-                        cannot spin the CPU.
+    com.tharoor.listen    at login, stays resident, reads the text box you
+                        are typing in. Restarted if it dies, throttled so a
+                        crash loop cannot spin the CPU.
     com.tharoor.nightly   23:30 and every 15 minutes while awake, catches up
                         retained days. Does not request a wake lock.
-    com.tharoor.morning   08:30, opens the report and sends the day's reminders.
+    com.tharoor.morning   08:30, opens the report.
 
 Every agent runs as you, in your login session. Nothing installs to /Library,
 nothing needs sudo, nothing runs as root. Removing it is `tharoor uninstall`, and
@@ -43,8 +42,8 @@ JOBS = {
     "com.tharoor.listen": {
         "args": ["listen"],
         "resident": True,  # starts at login and stays up
-        "battery_safe": True,  # 8.3 seconds of CPU across a whole day
-        "what": "reads your typing, all day; never the mic",
+        "battery_safe": True,
+        "what": "reads your typing, all day",
     },
     "com.tharoor.nightly": {
         "args": ["analyse-pending", "--force"],
@@ -52,15 +51,15 @@ JOBS = {
         "minute": 30,
         "retry": True,
         "battery_safe": True,  # no wake assertion; catches up while the Mac is awake
-        "what": "check the day's grammar and pronunciation",
+        "what": "check the day's grammar",
     },
     "com.tharoor.morning": {
         "args": ["morning", "--automatic"],
         "hour": 8,
         "minute": 30,
-        "battery_safe": True,  # cheap: opens a file and posts notifications
+        "battery_safe": True,  # cheap: opens a file and posts a notification
         "retry": True,
-        "what": "open the report, queue the reminders",
+        "what": "open the lesson",
     },
 }
 

@@ -101,7 +101,7 @@ def show() -> int:
         f"{bold}Mr Tharoor{reset}",
         "Your English teacher, in the terminal.",
         "",
-        "He reads what you type and hears what you",
+        "He reads what you type and what you",
         "dictate, then every morning hands you one",
         "page: what you said, what to say, and why.",
     ]
@@ -113,9 +113,9 @@ def show() -> int:
     print(f"\n  {bold}What he does{reset}")
     for what, how in (
         ("reads your typing", "Claude Code, Codex, Gmail, Notes, Slack, ChatGPT"),
-        ("hears your speech", "from Wispr Flow dictations; never his own mic"),
-        ("23:30 every night", "checks the day's grammar and pronunciation"),
-        ("08:30 every morning", "opens the lesson, with your voice next to a native one"),
+        ("reads your speech", "from Wispr Flow dictations; never the mic"),
+        ("23:30 every night", "checks the day's grammar"),
+        ("08:30 every morning", "opens the lesson: what you said, what to say, why"),
     ):
         print(f"    {what:<21}{dim}{how}{reset}")
 
@@ -128,7 +128,6 @@ def show() -> int:
     for command, what in (
         ("tharoor setup", "first time? start here"),
         ("tharoor morning", "open the latest lesson"),
-        ("tharoor drill", "hear a word, say it, hear yourself"),
         ("tharoor analyse-day", "run tonight's check now"),
         ("tharoor logs", "what the background jobs did"),
         ("tharoor install --remove", "stop everything"),
@@ -136,7 +135,7 @@ def show() -> int:
     ):
         print(f"    {command:<27}{dim}{what}{reset}")
 
-    print(f"\n  {dim}Private by design: audio never leaves this Mac. Password fields and private chats are"
+    print(f"\n  {dim}Private by design: no audio is touched. Password fields and private chats are"
           f"\n  never read. Only the day's sentences go to the grammar checker. Everything is forgotten"
           f"\n  two nights later.{reset}\n")
     return 0

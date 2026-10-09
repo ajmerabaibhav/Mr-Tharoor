@@ -1,48 +1,21 @@
-"""Turn a day's findings into the page that opens at 08:30.
+"""Turn a day's corrections into the page that opens at 08:30.
 
-The page is deliberately one self-contained file. Audio is embedded rather
-than linked, so it keeps working after the clips are deleted,
-and it can be sent to someone or kept forever without dragging a folder along.
-
-HTML only. It is the one format that can play sound, and hearing your own
-voice is the point. Old pages are deleted by streaks.purge_expired.
+The page is deliberately one self-contained file, so it works offline and can
+be sent to someone without dragging a folder along. Old pages are deleted by
+config.purge_expired.
 """
 
 from __future__ import annotations
 
-import base64
 import html
 import json
 import subprocess
 from datetime import date, datetime
 
-from . import config, daily
+from . import config
 
-# How a sound going wrong actually looks in letters. IPA teaches nobody
-# anything on a printed page; "you said WERSION, the word is VERSION" teaches
-# in one second. The respelling is an approximation of what came out, and the
-# report says so -- the recording is the ground truth.
-AS_HEARD = {
-    "v->w": ("v", "w"), "w->v": ("w", "v"), "th->t": ("th", "t"), "dh->d": ("th", "d"),
-    "z->s": ("z", "s"), "s->z": ("s", "z"), "zh->j": ("si", "sh"), "f->ph": ("f", "p"),
-    "final-d": ("d", "t"), "ae->e": ("a", "e"), "o->aw": ("o", "aw"),
-}
-
-
-def _as_heard(word: str, contrast: str) -> str | None:
-    """The word spelled the way it came out, or None when letters cannot show it."""
-    pair = AS_HEARD.get(contrast)
-    if not pair or not word:
-        return None
-    wrong, letters = pair
-    low = word.lower()
-    if contrast == "final-d":
-        return low[:-1] + letters if low.endswith(wrong) else None
-    if wrong not in low:
-        return None
-    said = low.replace(wrong, letters, 1)
-    return said if said != low else None
-
+# Bumped when the saved layout changes, so older days are rebuilt rather than misread.
+ANALYSIS_VERSION = 2
 
 # The mascot, drawn rather than fetched: inline SVG keeps the report one
 # self-contained file that works offline and prints in ink. He is a fictional
@@ -86,74 +59,10 @@ PORTRAIT = """<svg class="portrait" viewBox="0 0 124 124" role="img" aria-label=
 </svg>"""
 
 
-CONTRAST_NAMES = {
-    "v->w": "V becomes W", "w->v": "W becomes V", "th->t": "TH becomes T",
-    "dh->d": "TH becomes D", "z->s": "Z becomes S", "zh->j": "ZH becomes SH",
-    "final-d": "Final D becomes T", "f->ph": "F becomes P", "ae->e": "A becomes E",
-    "o->aw": "O becomes AW", "t->retroflex": "T is retroflex",
-    "d->retroflex": "D is retroflex",
-}
-
 # Mr Tharoor is an old-school Indian professor of English: courteous, exacting,
 # fond of a long word where a long word is warranted, and entirely without
 # condescension. He corrects the way a good teacher does, by showing you the
 # thing and trusting you to hear it.
-TIPS = {
-    "v->w": "The upper teeth must meet the lower lip, and the voice must follow. "
-            "A rounded lip gives you a W, and W is not what the word asks for.",
-    "w->v": "Round the lips and keep the teeth well clear. A W never touches a tooth.",
-    "th->t": "The tongue ventures between the teeth and the breath passes over it. "
-             "It feels absurd. It is nonetheless correct.",
-    "dh->d": "Tongue between the teeth once more, but this time with voice behind it. "
-             "The TH of THIS, not the D of DIS.",
-    "z->s": "The identical mouth as an S, with the voice switched on. "
-            "Place a finger at the throat: you should feel it hum.",
-    "zh->j": "Soft and sustained, as in the middle of TREASURE. "
-             "Do not stop it short with a D in front.",
-    "final-d": "Do not harden the ending into a T. Let the voice carry through to the close.",
-    "f->ph": "Teeth upon the lip, and a steady stream of breath. No puff of air, which is a P.",
-    "ae->e": "Open the jaw rather wider than feels dignified. CAT, not KET.",
-    "o->aw": "Two vowels in one, gliding: OH-oo. Not a single flat note.",
-    "t->retroflex": "The tongue tip meets the ridge behind the upper teeth, not the roof.",
-    "d->retroflex": "Forward, at the ridge behind the teeth. The retroflex belongs to Hindi.",
-}
-
-OPENERS = {
-    "clear": "Good morning. I have listened, and I must tell you plainly: "
-             "there is a habit here, and habits are the only things worth correcting.",
-    "likely": "Good morning. A pattern is emerging. Not yet a certainty, but "
-              "emerging, and better attended to now than later.",
-    "watch": "Good morning. Little of consequence today, which is itself a "
-             "respectable result. One or two things merit an ear.",
-}
-
-
-def _audio_tag(path: str | None, label: str, css: str) -> str:
-    data = daily.embed(path)
-    if not data:
-        return f'<button class="pb {css}" disabled>{label}</button>'
-    return (
-        f'<button class="pb {css}" data-src="{data}">{label}</button>'
-    )
-
-
-def _listen(day: date, anchor: str) -> str:
-    """The PDF cannot play audio, so it links to the page that can."""
-    page = (config.REPORTS_DIR / f"{day.isoformat()}.html").resolve().as_uri()
-    # `?listen` keeps Chrome's print from turning this into a jump inside the PDF.
-    return (f'<a class="listen" href="{page}?listen#{anchor}">'
-            '▶ Listen: you against the correct version (opens the interactive report)</a>')
-
-
-def _sureness(lower: float) -> str:
-    """Plain words for a credible bound. A number nobody trusts teaches nothing."""
-    if lower >= 0.15:
-        return "a clear habit"
-    if lower >= 0.08:
-        return "likely a habit"
-    return "worth watching"
-
-
 def _grammar_html(habits: list[dict], name: str = "") -> str:
     """The lesson: numbered corrections, what to say instead, and why."""
     if not habits:
@@ -198,8 +107,8 @@ def _grammar_html(habits: list[dict], name: str = "") -> str:
     number = 0
     for rows, title, blurb in (
         (spoken_rows, "What you said",
-         "From your dictation and reading audio, marked against the raw transcript. "
-         "Listen to the recording before you accept a correction: a recogniser can mishear."),
+         "From your Wispr Flow dictation, marked against the raw transcript. "
+         "A recogniser can mishear, so trust your memory of the sentence over the transcript."),
         (typed_rows, "What you typed",
          "From what you typed into Claude Code, Codex and other apps' text boxes. Pastes, commands and tool output are excluded."),
     ):
@@ -251,165 +160,46 @@ def _week_html(day: date) -> str:
     )
 
 
-CANDIDATE_LIMIT = 8  # how many unconfirmed sounds the page will show
-
-
 def _provenance(analysis: dict) -> str:
     """Say in the report itself what left the machine. It is the honest place."""
     engine = analysis.get("grammar_engine", "")
     if not engine.endswith("-cli"):
         return ('<div class="tribute">Everything in this report was produced on this machine. '
                 'Grammar came from local rules.</div>')
-    return ('<div class="tribute">Pronunciation was measured on this machine and no audio left it. '
+    return ('<div class="tribute">'
             f"Grammar was checked by the {'Codex' if engine == 'codex-cli' else 'Claude Code'} CLI "
             "already installed here, which means the day's "
             'transcript text was sent for that one call. Set MR_THAROOR_NO_LLM=1 to use local rules '
             'instead.</div>')
 
 
-def build_html(findings: list, day: date, grammar: list[dict] | None = None,
-               analysis: dict | None = None) -> str:
-    grouped = daily.group(findings, day)
-    bounds = daily.trustworthy_contrasts(findings, day)
-    total = sum(len(items) for items in grouped.values())
-    confirmed_ids = {id(item) for items in grouped.values() for item in items}
-    candidates = [item for item in findings if id(item) not in confirmed_ids]
-    rows = []
-    for contrast, items in grouped.items():
-        seen: set[str] = set()
-        examples = []
-        for finding in items:
-            if finding.word in seen:
-                continue
-            seen.add(finding.word)
-            examples.append(finding)
-            if len(examples) >= 3:
-                break
-        if not examples:
-            continue
-        first = examples[0]
-        blocks = "".join(
-            '<div class="ab"><div class="who">'
-            + (f'<div class="heard">You said <b>{html.escape((_as_heard(f.word, f.contrast) or "").upper())}</b></div>'
-               f'<div class="word">The word is <b>{html.escape(f.word.upper())}</b>'
-               if _as_heard(f.word, f.contrast)
-               else f'<div class="word">{html.escape(f.word)}')
-            + (f' <span class="ipa">{html.escape(f.ipa)}</span>' if f.ipa else "")
-            + f'</div><div class="ctx">Transcript: {html.escape(f.sentence[:110])}</div>'
-            + f'<div class="ctx">{"Wispr dictation" if "wispr-" in f.source else "Reading audio"} · phoneme model score {f.confidence:.0%} (not measured accuracy)</div></div>'
-            + '<div class="buttons">'
-            + _audio_tag(f.clip_path, "▶ You", "you")
-            + _audio_tag(f.correct_path, "▶ Reference", "right")
-            + "</div></div>"
-            for f in examples
-        )
-        rows.append(
-            f'<div class="card" id="s-{html.escape(contrast)}"><div class="card-head"><div class="swap">'
-            f'<span class="sound-name">{html.escape(CONTRAST_NAMES.get(contrast, contrast))}</span>'
-            f'<span class="arrow">/{html.escape(first.said)}/ where the word wants '
-            f'/{html.escape(first.should_be)}/</span>'
-            f'<span class="n">{len(items)}x &middot; {_sureness(bounds.get(contrast, 0.0))}</span></div>'
-            f'<div class="words">{html.escape(TIPS.get(contrast, ""))}</div></div>'
-            f"{blocks}{_listen(day, f's-{contrast}')}</div>"
-        )
-
-    body = "".join(rows)
-    if not body:
-        opportunities = int((analysis or {}).get("opportunities", 0))
-        explanation = (
-            f"The system checked {opportunities} sound opportunities, but none formed a "
-            "repeatable pattern strong enough to call a mistake. This does not prove the "
-            "speech was error-free; it means there is no correction the evidence can "
-            "support today."
-            if opportunities
-            else "This may mean clear speech, too little audio, or uncertain recognition."
-        )
-        body = (
-            '<div class="card"><div class="card-head"><div class="words">'
-            f"No pronunciation pattern passed the evidence checks. {explanation}"
-            "</div></div></div>"
-        )
-    candidate_cards = []
-    for number, finding in enumerate(candidates[:CANDIDATE_LIMIT]):
-        sentence = html.escape(finding.sentence[:360])
-        if len(finding.sentence) > 360:
-            sentence += "…"
-        source = "Wispr dictation" if "wispr-" in finding.source else "Reading audio"
-        ipa = f' <span class="ipa">{html.escape(finding.ipa)}</span>' if finding.ipa else ""
-        heard = _as_heard(finding.word, finding.contrast)
-        headline = (f'<span class="bad">{html.escape(heard.upper())}</span>'
-                    '<span class="arrow"> heard; the word is </span>'
-                    f'<span class="good">{html.escape(finding.word.upper())}</span>'
-                    if heard else
-                    f'<span class="bad">/{html.escape(finding.said)}/</span>'
-                    '<span class="arrow"> heard; expected </span>'
-                    f'<span class="good">/{html.escape(finding.should_be)}/</span>')
-        candidate_cards.append(
-            f'<div class="candidate-card" id="c-{number}">'
-            '<div class="candidate-head"><div>'
-            + headline
-            + f'<div class="candidate-word">{html.escape(finding.word)}{ipa}</div>'
-            '</div><span class="candidate-tag">candidate · not confirmed</span></div>'
-            f'<div class="words">{html.escape(CONTRAST_NAMES.get(finding.contrast, finding.contrast))}'
-            f' · confidence {finding.confidence:.0%} · audio quality {finding.quality:.0%} · {source}</div>'
-            f'<div class="candidate-transcript">“{sentence}”</div>'
-            + '<div class="buttons">'
-            + _audio_tag(finding.clip_path, "▶ You", "you")
-            + _audio_tag(finding.correct_path, "▶ Said properly", "right")
-            + '</div>' + _listen(day, f"c-{number}")
-            + '<div class="candidate-foot">Your own voice against a human recording. '
-            'The evidence does not yet call this a habit, so listen and judge it yourself.</div>'
-            '</div>'
-        )
-    candidate_html = (
-        '<div class="candidate-group"><h2 class="sect">Worth another listen</h2>'
-        '<div class="sub2">Possible pronunciation signals that did not yet meet the evidence threshold. '
-        'They are deliberately not labelled as mistakes.</div>'
-        + "".join(candidate_cards)
-        + '</div>'
-        if candidate_cards else ""
-    )
-    best = max((bounds[c] for c in grouped), default=0.0)
-    mood = "clear" if best >= 0.15 else ("likely" if best >= 0.08 else "watch")
+def build_html(day: date, grammar: list[dict] | None = None, analysis: dict | None = None) -> str:
+    grammar = grammar or []
     name = config.user_name()
     greeting = f"Good morning, {name}."
-    lesson_count = len(grammar or [])
-    if grouped:
-        remark = OPENERS[mood]
-    elif lesson_count:
-        remark = (
-            f"Your sounds gave me nothing I can prove today, which is not at all the same as "
-            f"nothing to say. Your phrasing gave me {lesson_count}, and phrasing is the half a "
-            "listener notices first. They are set out below, in order."
-        )
+    if grammar:
+        remark = (f"Your phrasing gave me {len(grammar)} thing{'s' if len(grammar) != 1 else ''} to "
+                  "set right, and phrasing is what a listener notices first. They are set out below, in order.")
     else:
-        remark = ("Neither your sounds nor your phrasing produced anything I am willing to call "
-                  "a mistake today. Rest on it; I shall be listening again tomorrow.")
-    clips = sum(bool(item.clip_path) for item in findings)
-    quality_values = [item.quality for item in findings if item.quality is not None]
-    quality = (sum(quality_values) / len(quality_values)) if quality_values else None
-    quality_value = f"{quality:.0%}" if quality is not None else "&mdash;"
-    quality_note = "average signal quality" if quality is not None else "no qualifying examples"
-    typed_rows = sum(1 for row in (grammar or []) if row.get("mode") == "typed")
-    spoken_rows = len(grammar or []) - typed_rows
+        remark = ("Nothing in your phrasing today that I am willing to call a mistake. "
+                  "Rest on it; I shall be reading again tomorrow.")
+    typed_rows = sum(1 for row in grammar if row.get("mode") == "typed")
+    spoken_rows = len(grammar) - typed_rows
     stats = (
         '<div class="stats">'
-        f'<div class="stat"><div class="stat-label">SOUNDS TO FIX</div><div class="stat-value">{len(grouped)}</div>'
-        '<div class="stat-note">confirmed patterns</div></div>'
-        f'<div class="stat"><div class="stat-label">GRAMMAR TO FIX</div><div class="stat-value">{len(grammar or [])}</div>'
-        f'<div class="stat-note">{spoken_rows} said &middot; {typed_rows} typed</div></div>'
-        f'<div class="stat"><div class="stat-label">CLIPS TO HEAR</div><div class="stat-value">{clips}</div>'
-        '<div class="stat-note">voice clips available</div></div>'
-        f'<div class="stat"><div class="stat-label">EVIDENCE QUALITY</div><div class="stat-value">{quality_value}</div>'
-        f'<div class="stat-note">{quality_note}</div></div>'
+        f'<div class="stat"><div class="stat-label">CORRECTIONS</div><div class="stat-value">{len(grammar)}</div>'
+        '<div class="stat-note">on this page</div></div>'
+        f'<div class="stat"><div class="stat-label">FROM SPEECH</div><div class="stat-value">{spoken_rows}</div>'
+        '<div class="stat-note">Wispr Flow dictation</div></div>'
+        f'<div class="stat"><div class="stat-label">FROM TYPING</div><div class="stat-value">{typed_rows}</div>'
+        '<div class="stat-note">chats and text boxes</div></div>'
         '</div>'
     )
     summary = ""
     if analysis is not None:
         sources = analysis.get("sources", {})
         wispr_count = int(sources.get("wispr", 0))
-        own_count = int(sources.get("own", 0))
-        candidate_count = int(analysis.get("candidates", 0))
+        typed_count = int(sources.get("typed", 0))
         completed = str(analysis.get("completed_at", ""))
         try:
             generated = datetime.fromisoformat(completed).strftime("%d %B %Y at %H:%M")
@@ -418,30 +208,21 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
         summary = (
             '<div class="card"><div class="card-head">'
             '<strong>Processing summary</strong><div class="words">'
-            f'{wispr_count} Wispr recording{"s" if wispr_count != 1 else ""}, '
-            f'{own_count} reading recording{"s" if own_count != 1 else ""} and '
-            f'{int(sources.get("typed", 0))} typed message{"s" if int(sources.get("typed", 0)) != 1 else ""} '
-            f'read; {int(analysis.get("opportunities", 0))} sound opportunities checked. '
-            f'{candidate_count} tentative candidate{"s" if candidate_count != 1 else ""}; '
-            f'{total} examples passed the evidence checks.</div>'
+            f'{wispr_count} dictation{"s" if wispr_count != 1 else ""} and '
+            f'{typed_count} typed message{"s" if typed_count != 1 else ""} read.</div>'
             f'<div class="words">Generated {html.escape(generated)}'
             ' (local time).'
             + (' This is a partial-day report; analysis will run again after the day ends.'
-               if str(analysis.get("completed_at", ""))[:10] == str(day) else '')
+               if completed[:10] == str(day) else '')
             + '</div></div></div>'
         )
     return (
-        # Keep an explicit empty state: an absent section looks like a broken
-        # report, whereas this makes clear that grammar was checked too.
+        # Keep an explicit empty state: an absent section looks like a broken report.
         TEMPLATE.replace("{{GREETING}}", html.escape(greeting))
         .replace("{{DATE}}", day.strftime("%A %d %B %Y"))
-        .replace("{{TOTAL}}", str(total))
-        .replace("{{SOUNDS}}", str(len(grouped)))
         .replace("{{STATS}}", stats)
-        .replace("{{CARDS}}", body)
-        .replace("{{CANDIDATES}}", candidate_html)
         .replace("{{SUMMARY}}", summary)
-        .replace("{{GRAMMAR}}", _grammar_html(grammar or [], name) or (
+        .replace("{{GRAMMAR}}", _grammar_html(grammar, name) or (
             '<h2 class="sect">Your lesson</h2>'
             '<div class="card"><div class="card-head"><div class="words">'
             'Nothing was marked in what you said or typed. '
@@ -455,26 +236,25 @@ def build_html(findings: list, day: date, grammar: list[dict] | None = None,
     )
 
 
-def write(findings: list, day: date | None = None, grammar: list[dict] | None = None,
+def write(day: date | None = None, grammar: list[dict] | None = None,
           analysis: dict | None = None) -> dict[str, str]:
     """The day's page."""
     day = day or date.today()
     config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     html_path = config.REPORTS_DIR / f"{day.isoformat()}.html"
-    html_path.write_text(build_html(findings, day, grammar, analysis), encoding="utf-8")
+    html_path.write_text(build_html(day, grammar, analysis), encoding="utf-8")
     return {"html": str(html_path)}
 
 
 def repair_exports(day: date, analysis: dict) -> bool:
-    """Rebuild a missing page from saved results without decoding audio again."""
+    """Rebuild a missing page from saved results without checking the day again."""
     html_path = config.REPORTS_DIR / f"{day}.html"
     if html_path.exists():
         return True
-    if not (config.REPORTS_DIR / f"{day}.json").exists():
-        return False
     grammar_path = config.REPORTS_DIR / f"{day}-grammar.json"
-    grammar = json.loads(grammar_path.read_text()) if grammar_path.exists() else []
-    written = write(daily.load(day), day, grammar=grammar, analysis=analysis)
+    if not grammar_path.exists():
+        return False
+    written = write(day, grammar=json.loads(grammar_path.read_text()), analysis=analysis)
     analysis["outputs"] = sorted(written)
     config.write_json_atomically(config.REPORTS_DIR / f"{day}-analysis.json", analysis)
     return html_path.exists()
@@ -496,8 +276,6 @@ def open_report(day: date | None = None) -> str | None:
 
 def latest_day(before: date | None = None) -> date | None:
     """Most recent completed report before today, even after a weekend away."""
-    import json
-
     before = before or date.today()
     for marker in sorted(config.REPORTS_DIR.glob("*-analysis.json"), reverse=True):
         try:
@@ -505,7 +283,7 @@ def latest_day(before: date | None = None) -> date | None:
             version = json.loads(marker.read_text()).get("version", 0)
         except (ValueError, TypeError):
             continue
-        if day < before and version >= daily.ANALYSIS_VERSION and marker.with_name(f"{day}.html").exists():
+        if day < before and version >= ANALYSIS_VERSION and marker.with_name(f"{day}.html").exists():
             return day
     return None
 
@@ -536,8 +314,8 @@ padding-left:16px;border-left:3px solid var(--rule2);max-width:62ch}
 .sect:after{content:"";display:block;width:56px;border-bottom:2px solid var(--ink);margin-top:7px}
 .sub2{color:var(--muted);font-size:.85rem;margin:10px 0 16px;max-width:62ch;font-style:italic}
 
-/* the day in four numbers */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--rule2);
+/* the day in three numbers */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--rule2);
 border-bottom:1px solid var(--rule2);margin:18px 0 26px}
 .stat{padding:14px 16px 13px;border-right:1px solid var(--rule)}.stat:last-child{border-right:0}
 .stat-label{font:600 .62rem/1.2 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--muted);
@@ -563,46 +341,15 @@ letter-spacing:.11em;text-transform:uppercase;margin:4px 0 8px}
 .label{font:700 .68rem/1 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--mark);
 background:var(--wash);border:1px solid #DCD5C2;padding:4px 8px;border-radius:2px;
 letter-spacing:.09em;margin-right:9px}
-.heard{font-size:1.06rem;color:var(--wrong);margin-bottom:2px}
-.heard b{font-weight:700;letter-spacing:.03em}
-.word b{color:var(--right);letter-spacing:.03em}
-.sound-name{font-size:1.15rem;font-weight:600}
 .ctx{font-size:.84rem;color:var(--muted);margin-top:8px;padding-left:12px;
 border-left:2px solid var(--rule);line-height:1.55}
 .action{display:inline-block;font:600 .7rem/1 -apple-system,BlinkMacSystemFont,sans-serif;
 color:var(--mark);background:var(--wash);padding:5px 9px;border-radius:2px;margin-left:10px;
 letter-spacing:.03em;vertical-align:middle}
 
-/* pronunciation: a sound, then your voice against a proper one */
 .card{background:var(--card);border:1px solid var(--rule);margin-bottom:14px;break-inside:avoid}
 .card-head{padding:15px 18px;border-bottom:1px solid var(--rule);background:var(--wash)}
-.swap{font-size:1.3rem;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-.bad{color:var(--wrong);font-weight:700}.good{color:var(--right);font-weight:700}
-.arrow{color:var(--muted);font:.72rem/1 -apple-system,sans-serif;letter-spacing:.06em;text-transform:uppercase}
-.n{margin-left:auto;color:var(--muted);font:.72rem/1 -apple-system,sans-serif}
 .words{font-size:.87rem;color:var(--ink2);margin-top:7px;line-height:1.5}
-.ab{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:13px 18px;
-border-bottom:1px solid var(--rule)}.ab:last-child{border-bottom:0}
-.word{font-size:1.1rem;font-weight:600}
-.ipa{color:var(--muted);font-size:.86rem;font-weight:400}
-.buttons{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
-.pb{border:1px solid var(--rule2);background:var(--card);border-radius:999px;padding:7px 14px;
-font:.8rem -apple-system,BlinkMacSystemFont,sans-serif;cursor:pointer;color:var(--ink2)}
-.pb.you{border-color:var(--wrong);color:var(--wrong)}
-.pb.right{border-color:var(--right);color:var(--right)}
-.pb[disabled]{opacity:.35;cursor:not-allowed}
-.listen{display:none}
-.candidate-card{background:var(--goldwash);border:1px solid #E2D2A8;border-left:3px solid var(--gold);
-padding:16px 18px;margin-bottom:12px;break-inside:avoid}
-.candidate-group{break-inside:avoid}
-.candidate-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
-.candidate-word{font-size:1.14rem;font-weight:600;margin-top:5px}
-.candidate-tag{font:.66rem/1 -apple-system,sans-serif;color:var(--gold);border:1px solid #E2D2A8;
-border-radius:999px;padding:5px 9px;white-space:nowrap;text-transform:uppercase;letter-spacing:.08em}
-.candidate-transcript{font-size:.86rem;color:var(--ink2);line-height:1.6;border-top:1px solid #E7DCBF;
-border-bottom:1px solid #E7DCBF;padding:11px 0;margin-top:11px}
-.candidate-foot{font:.74rem/1.5 -apple-system,sans-serif;color:var(--muted);margin-top:10px}
-.candidate-card .buttons{justify-content:flex-start;margin-top:12px}
 .week{border:1px solid var(--rule2);border-left:3px solid var(--mark);background:var(--card);
 padding:15px 18px;margin:0 0 26px;break-inside:avoid}
 .week-head{font:700 .64rem/1 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--mark);
@@ -613,13 +360,10 @@ letter-spacing:.14em;text-transform:uppercase;margin-bottom:7px}
 .week-foot{font:.72rem/1.5 -apple-system,BlinkMacSystemFont,sans-serif;color:var(--muted);margin-top:8px}
 .tribute{font-size:.76rem;color:var(--muted);line-height:1.6;margin-top:30px;padding-top:14px;
 border-top:1px solid var(--rule)}
-@media(max-width:620px){.ab{grid-template-columns:1fr}.buttons{justify-content:flex-start}
-.stats{grid-template-columns:repeat(2,1fr)}.stat:nth-child(2){border-right:0}
-.stat:nth-child(-n+2){border-bottom:1px solid var(--rule)}
-.item{grid-template-columns:28px 1fr;gap:10px}}
+@media(max-width:620px){.item{grid-template-columns:28px 1fr;gap:10px}}
 @page{margin:16mm 15mm}
 @media print{*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.pb{display:none}.listen{display:inline-block;margin-top:8px;color:var(--right);font-weight:600}body{padding:0 0 12px;font-size:11.5pt}.wrap{max-width:none}
+body{padding:0 0 12px;font-size:11.5pt}.wrap{max-width:none}
 .sect{break-after:avoid}.card,.item{break-inside:avoid}}
 </style></head><body><div class="wrap">
 <div class="masthead">{{PORTRAIT}}<h1>Mr Tharoor</h1></div><div class="rule-thin"></div>
@@ -629,19 +373,9 @@ border-top:1px solid var(--rule)}
 {{STATS}}
 {{WEEK}}
 {{GRAMMAR}}
-<h2 class="sect">Pronunciation</h2>
-{{CARDS}}
-{{CANDIDATES}}
 {{SUMMARY}}
 {{PROVENANCE}}
 <div class="tribute">Mr Tharoor is a fictional mascot, named in tribute to Dr Shashi Tharoor.
 This software is not affiliated with, endorsed by, or connected to him. Every word it speaks
 was written for this program.</div>
-</div><script>
-var playing=null;
-document.addEventListener('click',function(e){
-  var b=e.target.closest('.pb[data-src]'); if(!b)return;
-  if(playing){playing.pause();playing=null;}
-  playing=new Audio(b.getAttribute('data-src')); playing.play();
-});
-</script></body></html>"""
+</div></body></html>"""

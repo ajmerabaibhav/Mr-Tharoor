@@ -94,16 +94,6 @@ def test_label_is_one_word_and_verified():
     assert out[0].label == "participle"  # one word, lowercased
 
 
-def test_said_as_letters_not_ipa():
-    """A printed page cannot play a sound, so it must show the word misspelt."""
-    from mr_tharoor import report
-
-    assert report._as_heard("version", "v->w") == "wersion"
-    assert report._as_heard("that", "th->t") == "tat"
-    assert report._as_heard("word", "t->retroflex") is None  # letters cannot show it
-    assert report._as_heard("cat", "v->w") is None  # no v to swap
-
-
 def test_week_refuses_to_invent_progress(tmp_path, monkeypatch):
     """Days the old checker looked at must never be compared with the new one."""
     import json as _json

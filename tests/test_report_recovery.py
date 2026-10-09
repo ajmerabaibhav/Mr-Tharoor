@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mr_tharoor import cli, config, daily, listen, report, schedule
+from mr_tharoor import cli, config, report, schedule
 
 
 def test_install_rejects_false_success_from_launchctl(tmp_path, monkeypatch):
@@ -51,7 +51,7 @@ def test_install_command_returns_failure(monkeypatch):
 def test_report_is_html_only(monkeypatch):
     monkeypatch.setattr(config, "user_name", lambda: "Test")
     today = date.today()
-    assert report.write([], today) == {"html": str(config.REPORTS_DIR / f"{today}.html")}
+    assert report.write(today) == {"html": str(config.REPORTS_DIR / f"{today}.html")}
     assert not list(config.REPORTS_DIR.glob(f"{today}.pdf")) + list(config.REPORTS_DIR.glob(f"{today}.docx"))
 
 
@@ -72,14 +72,14 @@ def test_pending_repairs_missing_export_without_reanalysing(monkeypatch):
     # between 23:30 and midnight -- on the clock, not on the code.
     for back in range(0, 4):
         day = date.today() - timedelta(days=back)
-        daily.save([], day)
+        config.write_json_atomically(config.REPORTS_DIR / f"{day}-grammar.json", [])
         finished = (datetime.combine(day, time(23, 30)) if back == 0 else datetime.now())
         config.write_json_atomically(config.REPORTS_DIR / f"{day}-analysis.json",
                                      {"version": 2, "completed_at": finished.isoformat()})
     monkeypatch.setattr(config, "user_name", lambda: "Test")
     for back in range(1, 4):
         (config.REPORTS_DIR / f"{date.today() - timedelta(days=back)}.html").unlink(missing_ok=True)
-    monkeypatch.setattr(cli, "cmd_analyse_day", lambda args: pytest.fail("decoded completed audio again"))
+    monkeypatch.setattr(cli, "cmd_analyse_day", lambda args: pytest.fail("checked a completed day again"))
     assert cli.cmd_analyse_pending(argparse.Namespace(force=True)) == 0
     for back in range(1, config.KEEP_DAYS + 1):  # older days are retention's to delete
         day = date.today() - timedelta(days=back)
@@ -88,22 +88,15 @@ def test_pending_repairs_missing_export_without_reanalysing(monkeypatch):
 
 def test_partial_day_and_processing_counts_are_visible():
     day = date.today()
-    rendered = report.build_html([], day, analysis={"completed_at": f"{day}T10:00:00",
-            "sources": {"wispr": 5, "own": 2, "typed": 3}, "opportunities": 20, "candidates": 1})
-    assert "5 Wispr recordings, 2 reading recordings and 3 typed messages read" in rendered
-    assert "20 sound opportunities checked" in rendered
+    rendered = report.build_html(day, analysis={"completed_at": f"{day}T10:00:00",
+                                                "sources": {"wispr": 5, "typed": 3}})
+    assert "5 dictations and 3 typed messages read" in rendered
     assert "partial-day report" in rendered
 
 
-def test_empty_report_explains_abstention_without_claiming_zero_quality():
-    day = date.today() - timedelta(days=1)
-    rendered = report.build_html(
-        [], day, analysis={"completed_at": datetime.now().isoformat(), "opportunities": 51}
-    )
-    assert "checked 51 sound opportunities" in rendered
-    assert "does not prove the speech was error-free" in rendered
-    assert "no qualifying examples" in rendered
-    assert '<div class="stat-value">0%</div>' not in rendered
+def test_empty_report_says_nothing_was_marked():
+    rendered = report.build_html(date.today() - timedelta(days=1), [])
+    assert "Nothing was marked in what you said or typed" in rendered
 
 
 def test_pending_prioritises_yesterday_and_continues_after_failure(monkeypatch):
@@ -132,38 +125,6 @@ def test_daytime_preview_is_reanalysed_at_night(monkeypatch):
     monkeypatch.setattr(cli, "cmd_analyse_day", lambda args: calls.append(args.day) or 0)
     cli.cmd_analyse_pending(argparse.Namespace(force=True))
     assert str(day) in calls
-
-
-def test_cached_model_never_requests_network():
-    calls = []
-
-    def loader(name, *, local_files_only):
-        calls.append(local_files_only)
-        return "cached-model"
-
-    assert listen._cached_first(loader, "model") == "cached-model"
-    assert calls == [True]
-
-
-def test_missing_model_still_downloads_on_first_use():
-    calls = []
-
-    def loader(name, *, local_files_only):
-        calls.append(local_files_only)
-        if local_files_only:
-            raise FileNotFoundError("no cached model")
-        return "downloaded-model"
-
-    assert listen._cached_first(loader, "model") == "downloaded-model"
-    assert calls == [True, False]
-
-
-def test_model_computation_error_is_not_retried_as_download():
-    def loader(name, *, local_files_only):
-        raise RuntimeError("model is incompatible")
-
-    with pytest.raises(RuntimeError, match="incompatible"):
-        listen._cached_first(loader, "model")
 
 
 def test_day_whose_grammar_failed_offline_is_redone_once_online(monkeypatch):

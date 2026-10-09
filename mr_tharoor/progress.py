@@ -72,7 +72,7 @@ def _word_counts(days: list[date]) -> dict[date, int]:
         from . import wispr
 
         if wispr.available():
-            for d in wispr.dictations(with_audio=False):
+            for d in wispr.dictations():
                 day = d.when.date()
                 if day in counts:
                     counts[day] += len((d.heard or d.meant).split())
