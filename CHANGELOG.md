@@ -15,6 +15,12 @@ broken or deferred is in [TODOS.md](TODOS.md).
 - The catch-up job opens yesterday's page itself the moment it finishes. On
   10 Oct the lid was shut overnight, the analysis finished at 12:35, and the
   page waited for the morning job's next 15-minute tick.
+- Setup asks macOS for Accessibility by itself: the background listener
+  raises the prompt (from Terminal it would name Terminal, the wrong app),
+  setup opens the Settings page and waits, and the listener restarts itself
+  the moment it is switched on. Setup output restyled to match `tharoor`.
+  `tharoor install` retries the launchd bootstrap that failed with "5:
+  Input/output error" right after a bootout.
 - Grammar calls default to Haiku 5.5 (`claude-haiku-5-5`) instead of Haiku
   4.5: a tenth of the input price, half the output price. `grammar_eval`
   unchanged at 10/10 caught, 0/6 false alarms (2 passes).

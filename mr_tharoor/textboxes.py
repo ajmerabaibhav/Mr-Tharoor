@@ -26,8 +26,9 @@ What it refuses to read, before the text is ever fetched:
 What is scrubbed before it touches the disk: email addresses, links, long
 numbers (cards, phones, OTPs) and key-shaped tokens.
 
-Off until you grant Accessibility to the Python that runs `tharoor listen`
-and restart it (`tharoor install`); removing it there switches this off. Files go with everything else,
+Off until you grant Accessibility to the Python that runs `tharoor listen`.
+It asks macOS once, waits, and restarts itself the moment you switch it on;
+removing it there switches this off. Files go with everything else,
 KEEP_DAYS later.
 """
 
@@ -38,6 +39,7 @@ import difflib
 import json
 import os
 import re
+import signal
 import sys
 import threading
 import time
@@ -51,6 +53,7 @@ PAUSE = 60.0  # this long untouched and the box is committed
 BURST = 40  # chars appearing within one poll that no one typed
 MAX_FIELD = 20000  # a box bigger than this is a document dump, not typing
 READABLE = {"AXTextArea"}
+GRANTED = config.DATA_DIR / ".accessibility-granted"  # setup waits for this
 
 SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 SCRUB = [
@@ -265,10 +268,19 @@ def watch(stop: threading.Event, logger) -> None:
     try:
         if not trusted(prompt=not asked.exists()):
             asked.touch()
-            logger.info("typing capture off: grant Accessibility to the Python running `tharoor listen` "
-                        f"({os.path.realpath(sys.executable)}), then run `tharoor install` to restart it "
-                        "(macOS only tells a process about the permission when it starts)")
+            GRANTED.unlink(missing_ok=True)
+            logger.info("typing capture off until Accessibility is granted to "
+                        f"{os.path.realpath(sys.executable)}; waiting for it")
+            while not stop.wait(3):
+                if trusted():
+                    # The AX calls only work in a process started after the
+                    # grant: exit, and launchd's KeepAlive starts a fresh one.
+                    logger.info("Accessibility granted; restarting to pick it up")
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    return
             return
+        GRANTED.parent.mkdir(parents=True, exist_ok=True)
+        GRANTED.touch()
         logger.info("typing capture on (Accessibility granted)")
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"typing capture unavailable: {type(exc).__name__}: {exc}")

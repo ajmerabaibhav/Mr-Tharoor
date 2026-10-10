@@ -42,21 +42,20 @@ git clone https://github.com/ajmerabaibhav/Mr-Tharoor.git mr-tharoor
 cd mr-tharoor && pip install -e . && tharoor setup
 ```
 
-`tharoor setup` checks the machine, tells you two things and installs three
-background jobs. One small dependency, no model download. Then type and
-dictate normally. That is the whole interaction.
+`tharoor setup` checks the machine, says what he reads, starts three
+background jobs and asks macOS for Accessibility. One small dependency, no
+model download. Then type and dictate normally. That is the whole interaction.
 
-The two things:
-
-- **Accessibility.** To read what you type in other apps (Gmail, Notes,
-  Slack), allow the Python that `tharoor setup` names under **System
-  Settings › Privacy & Security › Accessibility**, then run `tharoor install`
-  once more.
-- **Grammar.** He reads your Wispr Flow dictations and what you type into
-  Claude Code and Codex chats (from their own history on your Mac, not through
-  Accessibility). Once a night the day's sentences go to your Claude Code or
-  Codex CLI for the grammar check. That check is the product: without it
-  only a few local rules run.
+- **What he reads.** Your Wispr Flow dictations, what you type into Claude
+  Code and Codex chats (from their own history on your Mac), and, with
+  Accessibility, the box you are typing in anywhere else (Gmail, Notes,
+  Slack). Once a night the day's sentences go to your Claude Code or Codex
+  CLI for the grammar check.
+- **Accessibility.** Setup opens System Settings at the right page and waits.
+  Switch on the Python it names; he picks it up by himself, no restart. Skip
+  it and Wispr and the chats still work; switch it on later and he notices.
+  The permission belongs to the background job, not Terminal, which is why
+  macOS names Python and not your terminal app.
 
 ## A day with him
 

@@ -63,3 +63,23 @@ def test_reaches_the_nightly_typed_source_and_is_forgotten():
 def test_password_managers_terminals_and_chats_are_blocked():
     for bundle in ("com.1password.1password", "com.apple.Terminal", "net.whatsapp.WhatsApp"):
         assert bundle in config.TYPING_BLOCKED
+
+
+def test_listener_waits_for_accessibility_then_restarts(monkeypatch, tmp_path):
+    # Setup cannot grant it: macOS asks on behalf of whoever runs the code, and
+    # from setup that is Terminal. The background listener asks, waits for the
+    # switch, then restarts so the new process is the one holding the grant.
+    import logging
+    import threading
+
+    answers = iter([False, False, True])
+    monkeypatch.setattr(textboxes, "trusted", lambda prompt=False: next(answers))
+    monkeypatch.setattr(textboxes.config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(textboxes, "GRANTED", tmp_path / ".accessibility-granted")
+    killed = []
+    monkeypatch.setattr(textboxes.os, "kill", lambda pid, sig: killed.append(sig))
+    stop = threading.Event()
+    monkeypatch.setattr(stop, "wait", lambda seconds: False)
+    textboxes.watch(stop, logging.getLogger("t"))
+    assert killed == [textboxes.signal.SIGTERM]
+    assert (tmp_path / ".asked-accessibility").exists()

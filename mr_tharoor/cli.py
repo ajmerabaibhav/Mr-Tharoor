@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from . import config
 
@@ -46,62 +47,94 @@ def cmd_setup(args: argparse.Namespace) -> int:
     """Everything a fresh clone needs, in the order it needs it.
 
     Written because the alternative is a README a person follows wrongly.
-    Each step says what it is doing and what it costs, and a failure names
-    the fix rather than a traceback.
+    Each step says what it is doing, and a failure names the fix rather than
+    a traceback.
     """
+    import os
     import platform
+    import subprocess
 
-    from . import schedule
+    from . import schedule, textboxes, welcome
 
-    problems = []
-    print("Mr Tharoor setup\n")
+    colour = welcome._colour()
+    bold, dim, green, red, reset = ("\033[1m", "\033[2m", "\033[32m", "\033[31m", "\033[0m") if colour \
+        else ("",) * 5
+    ok, bad = f"{green}●{reset}", f"{red}○{reset}"
 
-    print("  1. this machine")
+    print(f"\n  {bold}Mr Tharoor setup{reset}\n")
     if platform.system() != "Darwin":
-        print(f"     {platform.system()} is not supported. macOS only, for now.")
+        print(f"    {bad} {platform.system()} is not supported. macOS only, for now.\n")
         return 1
-    version = platform.mac_ver()[0]
-    print(f"     macOS {version} on {platform.machine()}  ok")
-
-    print("\n  2. libraries")
+    print(f"    {ok} macOS {platform.mac_ver()[0]} on {platform.machine()}")
     try:
         import ApplicationServices  # noqa: F401
-        print("     pyobjc-framework-ApplicationServices  ok")
+        print(f"    {ok} pyobjc-framework-ApplicationServices")
     except ImportError:
-        print("     missing: pyobjc-framework-ApplicationServices")
-        print("     fix: pip install pyobjc-framework-ApplicationServices")
-        print("\n  Stopping here. Install the library above and run `tharoor setup` again.")
+        print(f"    {bad} missing pyobjc-framework-ApplicationServices")
+        print(f"      {dim}fix: pip install pyobjc-framework-ApplicationServices, then run setup again{reset}\n")
         return 1
 
-    print("\n  3. two things to know")
-    print("     - Accessibility: to read what you type in other apps (Gmail, Notes, Slack),")
-    print(f"       allow {__import__('os').path.realpath(sys.executable)} under System Settings >")
-    print("       Privacy & Security > Accessibility, then run `tharoor install`.")
-    print("     - Grammar: he reads your Wispr Flow dictations and what you type into")
-    print("       Claude Code and Codex chats. Once a night the day's sentences go to")
-    print("       your Claude Code or Codex CLI for the grammar check.")
+    print(f"\n  {bold}What he reads{reset}")
+    for what, how in (
+        ("Wispr Flow", "your dictations; he never opens the mic"),
+        ("Claude Code, Codex", "what you type into the chats"),
+        ("other apps", "Gmail, Notes, Slack: needs Accessibility, next"),
+    ):
+        print(f"    {what:<21}{dim}{how}{reset}")
+    print(f"    {dim}Once a night the day's sentences go to your Claude Code or Codex CLI for grammar.{reset}")
 
-    print("\n  4. schedule")
+    print(f"\n  {bold}Background jobs{reset}")
+    # The listener asks macOS for Accessibility itself: a prompt from this
+    # process would name Terminal, which is not what runs in the background.
+    (config.DATA_DIR / ".asked-accessibility").unlink(missing_ok=True)
+    textboxes.GRANTED.unlink(missing_ok=True)
     try:
         for line in schedule.install():
-            print(f"     {line}")
+            print(f"    {ok} {line}")
     except schedule.InstallationError as exc:
-        print(f"     {exc}")
-        problems.append("schedule")
-
-    print("\n" + ("-" * 58))
-    if problems:
-        print(f"  Set up with problems: {', '.join(problems)}")
-        print("  Fix those and run `tharoor setup` again.")
+        for line in str(exc).splitlines():
+            print(f"    {bad} {line}")
+        print("\n  Run `tharoor setup` again. Nothing needs sudo.\n")
         return 1
-    print("  Ready. Mr Tharoor runs in the background and starts on every login.")
-    print()
-    print("  Type and dictate (Wispr Flow) normally. At 23:30 he checks the day,")
-    print("  at 08:30 the lesson opens by itself.")
-    print()
-    print("  tharoor          what he does and what is running")
-    print("  tharoor logs     what the scheduled jobs did")
+
+    print(f"\n  {bold}Accessibility{reset}")
+    python = os.path.realpath(sys.executable)
+    granted = _wait_for(textboxes.GRANTED, 5)
+    if not granted:
+        print(f"    macOS is asking now. In the window that opens, switch on {bold}{Path(python).name}{reset}")
+        print(f"    {dim}({python}). Not in the list? Press +, then Cmd-Shift-G and paste that path.{reset}")
+        subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"],
+                       capture_output=True)
+        if sys.stdin.isatty():
+            print(f"    {dim}Waiting for you (press Enter to skip)...{reset}", flush=True)
+            granted = _wait_for(textboxes.GRANTED, 300, skippable=True)
+    if granted:
+        print(f"    {ok} granted: he can read the box you are typing in")
+    else:
+        print(f"    {bad} not yet: Wispr and the chats still work. Switch it on any time; he notices.")
+
+    print(f"\n  {bold}Ready.{reset} He runs in the background and starts on every login.")
+    print(f"  {dim}23:30 he checks the day. 08:30 the lesson opens by itself.{reset}\n")
+    print(f"    tharoor          {dim}what he does and what is running{reset}")
+    print(f"    tharoor logs     {dim}what the background jobs did{reset}\n")
     return 0
+
+
+def _wait_for(path: Path, seconds: float, skippable: bool = False) -> bool:
+    """True once `path` exists. Enter gives up early when `skippable`."""
+    import select
+    import time
+
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if path.exists():
+            return True
+        if skippable and select.select([sys.stdin], [], [], 1)[0]:
+            sys.stdin.readline()
+            return False
+        if not skippable:
+            time.sleep(0.5)
+    return path.exists()
 
 
 def cmd_listen(args: argparse.Namespace) -> int:

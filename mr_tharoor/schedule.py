@@ -30,6 +30,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -185,15 +186,20 @@ def install(dry_run: bool = False) -> list[str]:
                 failures.append(f"{label}: could not stop the old service: {result.stderr.strip()}")
                 continue
         enabled = _launchctl("enable", target)
-        result = _launchctl("bootstrap", _domain(), str(path))
+        for _ in range(10):
+            # Right after a bootout launchd can still be tearing the old
+            # one down and answers "5: Input/output error" (10 Oct, setup).
+            result = _launchctl("bootstrap", _domain(), str(path))
+            if result.returncode == 0:
+                break
+            time.sleep(0.5)
         verified = service_state(label)
         if enabled.returncode or result.returncode or not verified["loaded"]:
             failures.append(f"{label}: installation failed: "
                             f"{result.stderr.strip() or enabled.stderr.strip() or verified.get('detail')}")
             continue
-        state = "loaded (verified)"
         when = "at login" if job.get("resident") else f"{job['hour']:02d}:{job['minute']:02d}"
-        written.append(f"{label:<20} {when:<9} {state}")
+        written.append(f"{job['what']:<28} {when}")
     if failures:
         raise InstallationError("\n".join(written + failures))
     return written
