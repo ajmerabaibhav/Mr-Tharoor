@@ -73,9 +73,89 @@ def _tharoor() -> list[str]:
     return [sys.executable, "-m", "mr_tharoor.cli"]
 
 
+APP = config.ROOT / "Mr Tharoor.app"
+APP_INFO = {
+    "CFBundleName": "Mr Tharoor", "CFBundleDisplayName": "Mr Tharoor",
+    "CFBundleIdentifier": "com.tharoor.app", "CFBundleExecutable": "MrTharoor",
+    "CFBundlePackageType": "APPL", "CFBundleVersion": "1", "LSUIElement": True,
+    "CFBundleIconFile": "AppIcon",
+}
+
+
+def _icon_png() -> bytes:
+    """The welcome portrait (welcome.ART) on a cream square, 1024 px, as PNG.
+    Stdlib only: nearest-neighbour blocks need no imaging library."""
+    import struct
+    import zlib
+
+    from .welcome import ART, PALETTE
+
+    size, scale = 1024, 32
+    background = (240, 233, 220)
+    left, top = (size - len(ART[0]) * scale) // 2, size - len(ART) * scale  # shoulders on the edge
+    rows = []
+    for y in range(size):
+        art = ART[(y - top) // scale] if y >= top else ""
+        row = bytearray(b"\0")
+        for x in range(size):
+            cell = art[(x - left) // scale] if art and 0 <= x - left < len(art) * scale else "."
+            row += bytes(PALETTE.get(cell, background))
+        rows.append(bytes(row))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(b"".join(rows), 9)) + chunk(b"IEND", b""))
+
+
+def launcher() -> str | None:
+    """Build Mr Tharoor.app once; the listener runs inside it so macOS names
+    the Accessibility grant "Mr Tharoor", not "python3.12" (native/launcher.c).
+
+    Built only when missing or its source, icon or Info.plist changed: a
+    rebuilt app is a new identity to macOS, and the grant must be given again. None when
+    there is no compiler (no Xcode command line tools); the listener then runs
+    as plain Python, which works the same under its old name.
+    """
+    import hashlib
+
+    source = Path(__file__).with_name("native") / "launcher.c"
+    binary = APP / "Contents" / "MacOS" / "MrTharoor"
+    stamp = APP / "Contents" / "Resources" / "source.sha256"
+    icon = _icon_png()
+    digest = hashlib.sha256(source.read_bytes() + icon + plistlib.dumps(APP_INFO)).hexdigest()
+    if binary.exists() and stamp.exists() and stamp.read_text() == digest:
+        return str(binary)
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    (APP / "Contents" / "Info.plist").write_bytes(plistlib.dumps(APP_INFO))
+    try:
+        built = subprocess.run(["clang", "-O2", "-o", str(binary), str(source)],
+                               capture_output=True, timeout=120).returncode == 0
+        iconset = stamp.with_name("AppIcon.iconset")  # iconutil: sips failed writing its temp file
+        iconset.mkdir(exist_ok=True)
+        (iconset / "icon_512x512@2x.png").write_bytes(icon)
+        subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(stamp.with_name("AppIcon.icns"))],
+                       capture_output=True, timeout=60)
+        shutil.rmtree(iconset)
+        stamp.write_text(digest)  # before signing: a file added after breaks the seal
+        signed = built and subprocess.run(["codesign", "--force", "-s", "-", "-i", APP_INFO["CFBundleIdentifier"],
+                                           str(APP)], capture_output=True, timeout=60).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        signed = False
+    if not signed:
+        shutil.rmtree(APP, ignore_errors=True)
+        return None
+    return str(binary)
+
+
 def plist_for(label: str, job: dict) -> dict:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     command = _tharoor() + list(job["args"])
+    if job.get("resident"):
+        app = launcher()
+        command = ([app] if app else []) + command
     schedule: dict = {}
     if job.get("resident"):
         # KeepAlive: True, not {"SuccessfulExit": False}.

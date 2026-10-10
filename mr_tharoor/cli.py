@@ -83,6 +83,24 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print(f"    {what:<21}{dim}{how}{reset}")
     print(f"    {dim}Once a night the day's sentences go to your Claude Code or Codex CLI for grammar.{reset}")
 
+    print(f"\n  {bold}Grammar checker{reset}")
+    from . import grammar
+
+    ready = False
+    for binary in grammar.llm_binaries():
+        name = Path(binary).name
+        if grammar.logged_in(binary):
+            ready = True
+            print(f"    {ok} {name:<8}{dim}logged in{reset}")
+        else:
+            print(f"    {bad} {name:<8}{dim}installed, not logged in: run `{name}` once and sign in{reset}")
+    if not grammar.llm_binaries():
+        print(f"    {bad} no Claude Code or Codex found. Install one and sign in:")
+        print(f"      {dim}Claude Code   curl -fsSL https://claude.ai/install.sh | bash, then `claude`{reset}")
+        print(f"      {dim}Codex         npm install -g @openai/codex, then `codex login`{reset}")
+    if not ready:
+        print(f"    {dim}Until then he checks only a few local rules. Run setup again after signing in.{reset}")
+
     print(f"\n  {bold}Background jobs{reset}")
     # The listener asks macOS for Accessibility itself: a prompt from this
     # process would name Terminal, which is not what runs in the background.
@@ -98,20 +116,22 @@ def cmd_setup(args: argparse.Namespace) -> int:
         return 1
 
     print(f"\n  {bold}Accessibility{reset}")
-    python = os.path.realpath(sys.executable)
+    app = schedule.APP if schedule.APP.exists() else Path(os.path.realpath(sys.executable))
     granted = _wait_for(textboxes.GRANTED, 5)
     if not granted:
-        print(f"    macOS is asking now. In the window that opens, switch on {bold}{Path(python).name}{reset}")
-        print(f"    {dim}({python}). Not in the list? Press +, then Cmd-Shift-G and paste that path.{reset}")
+        print(f"    macOS is asking now. In the window that opens, switch on {bold}{app.stem}{reset}.")
+        print(f"    {dim}Not in the list? Press +, then Cmd-Shift-G and paste:{reset}")
+        print(f"    {dim}{app}{reset}")
         subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"],
                        capture_output=True)
         if sys.stdin.isatty():
             print(f"    {dim}Waiting for you (press Enter to skip)...{reset}", flush=True)
-            granted = _wait_for(textboxes.GRANTED, 300, skippable=True)
+            granted = _wait_for(textboxes.GRANTED, 300, skippable=True,
+                                restart=f"{schedule._domain()}/com.tharoor.listen")
     if granted:
         print(f"    {ok} granted: he can read the box you are typing in")
     else:
-        print(f"    {bad} not yet: Wispr and the chats still work. Switch it on any time; he notices.")
+        print(f"    {bad} not yet: Wispr and the chats still work. Switch it on any time; he checks every 10 minutes.")
 
     print(f"\n  {bold}Ready.{reset} He runs in the background and starts on every login.")
     print(f"  {dim}23:30 he checks the day. 08:30 the lesson opens by itself.{reset}\n")
@@ -120,15 +140,24 @@ def cmd_setup(args: argparse.Namespace) -> int:
     return 0
 
 
-def _wait_for(path: Path, seconds: float, skippable: bool = False) -> bool:
-    """True once `path` exists. Enter gives up early when `skippable`."""
+def _wait_for(path: Path, seconds: float, skippable: bool = False, restart: str = "") -> bool:
+    """True once `path` exists. Enter gives up early when `skippable`.
+
+    `restart` names a launchd job to restart every few seconds: a permission
+    granted while it runs only reaches a fresh process.
+    """
     import select
+    import subprocess
     import time
 
     deadline = time.monotonic() + seconds
+    kicked = time.monotonic()
     while time.monotonic() < deadline:
         if path.exists():
             return True
+        if restart and time.monotonic() - kicked > 5:
+            subprocess.run(["launchctl", "kickstart", "-k", restart], capture_output=True)
+            kicked = time.monotonic()
         if skippable and select.select([sys.stdin], [], [], 1)[0]:
             sys.stdin.readline()
             return False

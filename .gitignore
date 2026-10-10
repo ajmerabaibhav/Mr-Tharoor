@@ -11,3 +11,4 @@ logs/
 *.egg-info/
 
 .claude/settings.local.json
+Mr Tharoor.app/

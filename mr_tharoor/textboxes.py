@@ -27,8 +27,9 @@ What is scrubbed before it touches the disk: email addresses, links, long
 numbers (cards, phones, OTPs) and key-shaped tokens.
 
 Off until you grant Accessibility to the Python that runs `tharoor listen`.
-It asks macOS once, waits, and restarts itself the moment you switch it on;
-removing it there switches this off. Files go with everything else,
+It asks macOS once; a grant reaches only a process started after it, so
+setup restarts the listener while it waits, and on its own it restarts every
+RECHECK seconds until granted. Removing it there switches this off. Files go with everything else,
 KEEP_DAYS later.
 """
 
@@ -54,6 +55,7 @@ BURST = 40  # chars appearing within one poll that no one typed
 MAX_FIELD = 20000  # a box bigger than this is a document dump, not typing
 READABLE = {"AXTextArea"}
 GRANTED = config.DATA_DIR / ".accessibility-granted"  # setup waits for this
+RECHECK = 600  # without Accessibility, restart this often to see a new grant
 
 SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 SCRUB = [
@@ -269,15 +271,14 @@ def watch(stop: threading.Event, logger) -> None:
         if not trusted(prompt=not asked.exists()):
             asked.touch()
             GRANTED.unlink(missing_ok=True)
-            logger.info("typing capture off until Accessibility is granted to "
-                        f"{os.path.realpath(sys.executable)}; waiting for it")
-            while not stop.wait(3):
-                if trusted():
-                    # The AX calls only work in a process started after the
-                    # grant: exit, and launchd's KeepAlive starts a fresh one.
-                    logger.info("Accessibility granted; restarting to pick it up")
-                    os.kill(os.getpid(), signal.SIGTERM)
-                    return
+            logger.info("typing capture off until Accessibility is granted to Mr Tharoor "
+                        f"(or {os.path.realpath(sys.executable)} without the app); waiting for it")
+            # AXIsProcessTrusted never turns true inside a process started
+            # before the grant (measured 10 Oct: granted, polled, stayed off;
+            # a restart saw it at once). So re-check by restarting: setup
+            # kickstarts us while it waits; on our own, every 10 minutes.
+            if not stop.wait(RECHECK):
+                os.kill(os.getpid(), signal.SIGTERM)
             return
         GRANTED.parent.mkdir(parents=True, exist_ok=True)
         GRANTED.touch()

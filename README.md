@@ -51,11 +51,17 @@ model download. Then type and dictate normally. That is the whole interaction.
   Accessibility, the box you are typing in anywhere else (Gmail, Notes,
   Slack). Once a night the day's sentences go to your Claude Code or Codex
   CLI for the grammar check.
-- **Accessibility.** Setup opens System Settings at the right page and waits.
-  Switch on the Python it names; he picks it up by himself, no restart. Skip
-  it and Wispr and the chats still work; switch it on later and he notices.
-  The permission belongs to the background job, not Terminal, which is why
-  macOS names Python and not your terminal app.
+- **Grammar checker.** Setup checks that Claude Code or Codex is installed
+  and signed in (`claude auth status`, `codex login status`), and says how to
+  fix it if not. Without one, only a few local rules run.
+- **Accessibility.** The background job runs inside a small app,
+  `Mr Tharoor.app` (built on your Mac from `mr_tharoor/native/launcher.c`,
+  with his portrait as its icon), so macOS asks for **Mr Tharoor**, not
+  Python. Setup opens System Settings at the right page and waits; switch on
+  Mr Tharoor and setup says so within seconds. Skip it and Wispr and the
+  chats still work; switch it on later and he picks it up within 10 minutes.
+  No Xcode command line tools? He runs as plain Python and macOS names that
+  instead.
 
 ## A day with him
 

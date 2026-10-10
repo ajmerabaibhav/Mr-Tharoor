@@ -21,6 +21,15 @@ broken or deferred is in [TODOS.md](TODOS.md).
   the moment it is switched on. Setup output restyled to match `tharoor`.
   `tharoor install` retries the launchd bootstrap that failed with "5:
   Input/output error" right after a bootout.
+- The listener runs inside `Mr Tharoor.app` (a 40-line C stub, ad-hoc
+  signed, his portrait as the icon, all built at install with clang,
+  iconutil and codesign), so Accessibility lists "Mr Tharoor", not
+  "python3.12". A grant only reaches a process started after it (measured:
+  granted, polled AXIsProcessTrusted, stayed false; a restart saw it), so
+  setup restarts the listener while waiting, and an ungranted listener
+  restarts itself every 10 minutes.
+- Setup checks Claude Code and Codex are installed and signed in, and says
+  how to fix it when not.
 - Grammar calls default to Haiku 5.5 (`claude-haiku-5-5`) instead of Haiku
   4.5: a tenth of the input price, half the output price. `grammar_eval`
   unchanged at 10/10 caught, 0/6 false alarms (2 passes).

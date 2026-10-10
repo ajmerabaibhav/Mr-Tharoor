@@ -393,6 +393,16 @@ def llm_binary() -> str | None:
     return binaries[0] if binaries else None
 
 
+def logged_in(binary: str) -> bool:
+    """Whether this CLI has an account to run on. Both exit 1 when logged out:
+    `claude auth status` (an API key counts) and `codex login status`."""
+    args = ["login", "status"] if Path(binary).name == "codex" else ["auth", "status"]
+    try:
+        return subprocess.run([binary, *args], capture_output=True, timeout=20).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def llm_name() -> str:
     """"claude" or "codex": which CLI the grammar call goes through."""
     return Path(llm_binary() or "claude").name

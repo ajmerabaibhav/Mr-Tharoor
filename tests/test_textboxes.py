@@ -68,12 +68,11 @@ def test_password_managers_terminals_and_chats_are_blocked():
 def test_listener_waits_for_accessibility_then_restarts(monkeypatch, tmp_path):
     # Setup cannot grant it: macOS asks on behalf of whoever runs the code, and
     # from setup that is Terminal. The background listener asks, waits for the
-    # switch, then restarts so the new process is the one holding the grant.
+    # switch, then restarts: only a process started after the grant has it.
     import logging
     import threading
 
-    answers = iter([False, False, True])
-    monkeypatch.setattr(textboxes, "trusted", lambda prompt=False: next(answers))
+    monkeypatch.setattr(textboxes, "trusted", lambda prompt=False: False)
     monkeypatch.setattr(textboxes.config, "DATA_DIR", tmp_path)
     monkeypatch.setattr(textboxes, "GRANTED", tmp_path / ".accessibility-granted")
     killed = []
