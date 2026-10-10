@@ -77,8 +77,9 @@ def cmd_setup(args: argparse.Namespace) -> int:
     print("     - Accessibility: to read what you type in other apps (Gmail, Notes, Slack),")
     print(f"       allow {__import__('os').path.realpath(sys.executable)} under System Settings >")
     print("       Privacy & Security > Accessibility, then run `tharoor install`.")
-    print("     - Grammar: once a night the day's sentences go to your Claude Code or")
-    print("       Codex CLI for the grammar check.")
+    print("     - Grammar: he reads your Wispr Flow dictations and what you type into")
+    print("       Claude Code and Codex chats. Once a night the day's sentences go to")
+    print("       your Claude Code or Codex CLI for the grammar check.")
 
     print("\n  4. schedule")
     try:

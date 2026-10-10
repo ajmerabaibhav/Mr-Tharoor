@@ -52,7 +52,9 @@ The two things:
   Slack), allow the Python that `tharoor setup` names under **System
   Settings › Privacy & Security › Accessibility**, then run `tharoor install`
   once more.
-- **Grammar.** Once a night the day's sentences go to your Claude Code or
+- **Grammar.** He reads your Wispr Flow dictations and what you type into
+  Claude Code and Codex chats (from their own history on your Mac, not through
+  Accessibility). Once a night the day's sentences go to your Claude Code or
   Codex CLI for the grammar check. That check is the product: without it
   only a few local rules run.
 
