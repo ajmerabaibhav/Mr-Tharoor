@@ -350,6 +350,10 @@ def cmd_analyse_pending(args: argparse.Namespace) -> int:
                 pass
         result = cmd_analyse_day(argparse.Namespace(day=str(day), force=args.force))
         failed = failed or bool(result)
+    # A Mac asleep at 08:30 finishes yesterday mid-morning; open it now rather
+    # than at the morning job's next 15-min tick. _morning keeps its own gates
+    # (08-21 h, mic in use, already opened today), so this is a no-op otherwise.
+    cmd_morning(argparse.Namespace(automatic=True))
     return int(failed)
 
 

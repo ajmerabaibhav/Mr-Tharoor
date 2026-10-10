@@ -92,6 +92,38 @@ def test_morning_waits_for_yesterday_then_reopens_once_whole(monkeypatch):
     assert calls == [yesterday], "waited forever on a redo that cannot succeed"
 
 
+def test_catch_up_opens_yesterday_the_moment_it_finishes(monkeypatch):
+    # Lid shut overnight (10 Oct): yesterday finished at 12:35 but waited for
+    # the morning job's next 15-min tick. The catch-up run must open it itself.
+    class Morning(dates.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls.combine(dates.date.today(), dates.time(12, 35))
+
+    monkeypatch.setattr(dates, "datetime", Morning)
+    monkeypatch.setattr(micgate, "is_mic_in_use", lambda: False)
+    monkeypatch.setattr(config, "user_name", lambda: "Test")
+    import subprocess
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0))
+    calls = []
+    monkeypatch.setattr(report, "open_report", lambda day: calls.append(day) or "report.html")
+    yesterday = dates.date.today() - dates.timedelta(days=1)
+
+    def analyse(args):
+        if args.day == str(yesterday):
+            (config.REPORTS_DIR / f"{yesterday}.html").write_text("report")
+            config.write_json_atomically(config.REPORTS_DIR / f"{yesterday}-analysis.json", {
+                "version": 2, "grammar_failed": [], "completed_at": Morning.now().isoformat()})
+        return 0
+
+    monkeypatch.setattr(cli, "cmd_analyse_day", analyse)
+    cli.cmd_analyse_pending(argparse.Namespace(force=True))
+    assert calls == [yesterday]
+    cli.cmd_analyse_pending(argparse.Namespace(force=True))
+    assert calls == [yesterday], "reopened on every 15-min tick"
+
+
 def test_bare_tharoor_shows_the_welcome(capsys):
     from mr_tharoor import cli
 
