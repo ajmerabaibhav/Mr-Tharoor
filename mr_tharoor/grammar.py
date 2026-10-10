@@ -444,7 +444,7 @@ def _call_llm(binary: str, prompt: str, config) -> str:
         # No tools, no settings, a one-line system prompt. Measured: Claude
         # Code's own coding prompt and tool list cost 26,600 tokens a call
         # before reading a word of yours; this costs about 400.
-        command = [binary, "-p", prompt, "--model", LLM_MODEL or "claude-haiku-4-5-20251001",
+        command = [binary, "-p", prompt, "--model", LLM_MODEL or "claude-haiku-5-5",
                    "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                    "--tools", "", "--setting-sources", "",
                    "--system-prompt", "You are an exacting English teacher."]

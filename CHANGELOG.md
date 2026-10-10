@@ -15,6 +15,9 @@ broken or deferred is in [TODOS.md](TODOS.md).
 - The catch-up job opens yesterday's page itself the moment it finishes. On
   10 Oct the lid was shut overnight, the analysis finished at 12:35, and the
   page waited for the morning job's next 15-minute tick.
+- Grammar calls default to Haiku 5.5 (`claude-haiku-5-5`) instead of Haiku
+  4.5: a tenth of the input price, half the output price. `grammar_eval`
+  unchanged at 10/10 caught, 0/6 false alarms (2 passes).
 
 ## Grammar only: pronunciation removed — 9 October 2026
 
