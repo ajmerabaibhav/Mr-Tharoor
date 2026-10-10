@@ -268,29 +268,6 @@ def test_text_box_sentence_already_in_a_chat_is_counted_once(tmp_path, monkeypat
     assert len(typed.for_day(date.today())) == 1
 
 
-def test_setup_answers_are_obeyed(tmp_path, monkeypatch):
-    from mr_tharoor import config
-
-    monkeypatch.setattr(grammar, "llm_binary", lambda: "/bin/echo")
-    monkeypatch.delenv("MR_THAROOR_NO_LLM", raising=False)
-    assert config.allowed("chats") and grammar.llm_available()  # no answers yet: as before
-    config.write_json_atomically(config.DATA_DIR / "consent.json", {"chats": False, "llm": False})
-    assert not grammar.llm_available()
-    folder = tmp_path / "proj"
-    folder.mkdir()
-    (folder / "s.jsonl").write_text(json.dumps({
-        "type": "user", "timestamp": datetime.now(timezone.utc).isoformat(),
-        "message": {"content": "please read this chat message if you are allowed to"}}) + "\n")
-    monkeypatch.setattr(typed, "PROJECTS", tmp_path)
-    monkeypatch.setattr(typed, "CODEX_HISTORY", tmp_path / "none")
-    from mr_tharoor import textboxes
-
-    monkeypatch.setattr(textboxes, "for_day", lambda day: [])
-    assert typed.for_day(date.today()) == []
-    config.write_json_atomically(config.DATA_DIR / "consent.json", {"chats": True, "llm": False})
-    assert len(typed.for_day(date.today())) == 1  # the same file is read once allowed
-
-
 def test_two_passes_merge_one_mistake_once():
     items = [("a", "so i want clear few of my doubts about whole thing today")]
     f = lambda said, to: grammar.GrammarFinding(kind="article", said=said, should_be=to, context="", source="a")

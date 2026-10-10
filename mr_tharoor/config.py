@@ -32,18 +32,6 @@ TYPING_BLOCKED = frozenset({
     "com.electron.wispr-flow",
 })
 
-def allowed(what: str) -> bool:
-    """What `tharoor setup` asked: "chats" (read Claude Code and Codex
-    history) and "llm" (send the day's sentences out for grammar). An
-    install from before the questions existed has no file and keeps working."""
-    import json
-
-    try:
-        return bool(json.loads((DATA_DIR / "consent.json").read_text()).get(what, True))
-    except (OSError, ValueError):
-        return True
-
-
 def user_name() -> str:
     """Who the morning report greets. Overridable, defaults to the Mac account."""
     import subprocess

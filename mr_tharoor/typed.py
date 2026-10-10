@@ -104,10 +104,7 @@ def for_day(day: date, exclude: list[str] | None = None) -> list[tuple[str, str]
         seen.add(key)
         out.append((label, text))
 
-    from . import config
-
-    chats = config.allowed("chats")
-    for transcript in sorted(PROJECTS.glob("*/*.jsonl")) if chats else []:
+    for transcript in sorted(PROJECTS.glob("*/*.jsonl")):
         if "mr-tharoor" in transcript.parent.name or "mr_tharoor" in transcript.parent.name:
             continue
         if datetime.fromtimestamp(transcript.stat().st_mtime).date() < day - timedelta(days=1):
@@ -132,7 +129,7 @@ def for_day(day: date, exclude: list[str] | None = None) -> list[tuple[str, str]
         codex = CODEX_HISTORY.read_text(errors="replace").splitlines()
     except OSError:
         codex = []
-    for number, line in enumerate(codex if chats else []):
+    for number, line in enumerate(codex):
         try:
             row = json.loads(line)
             when = datetime.fromtimestamp(row["ts"]).date()

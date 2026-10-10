@@ -4,6 +4,18 @@ What changed, when, and what was measured. Newest first.
 The current state of the project is in [README.md](README.md); what is still
 broken or deferred is in [TODOS.md](TODOS.md).
 
+## Setup asks nothing; the page opens when it is ready — 10 October 2026
+
+- `tharoor setup` no longer asks the two consent questions. It tells you two
+  things: allow Accessibility, and the day's sentences go to your Claude Code
+  or Codex CLI once a night. Claude Code and Codex chats are always read. A No
+  to the grammar question left a few local rules, which is no product; an old
+  `data/consent.json` is now ignored. `MR_THAROOR_NO_LLM=1` still turns the
+  call off.
+- The catch-up job opens yesterday's page itself the moment it finishes. On
+  10 Oct the lid was shut overnight, the analysis finished at 12:35, and the
+  page waited for the morning job's next 15-minute tick.
+
 ## Grammar only: pronunciation removed — 9 October 2026
 
 Pronunciation was never shown to work on a real voice: `tharoor check` was

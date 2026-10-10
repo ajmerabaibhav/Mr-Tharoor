@@ -73,23 +73,12 @@ def cmd_setup(args: argparse.Namespace) -> int:
         print("\n  Stopping here. Install the library above and run `tharoor setup` again.")
         return 1
 
-    print("\n  3. what he reads (your answers are saved; run setup again to change them)")
-    print("     - Wispr Flow dictations, stored on this Mac by Wispr")
-    print("     - other apps' text boxes, only if you allow Accessibility (below)")
-
-    def ask(question: str) -> bool:
-        try:
-            return input(f"     {question} [y/N] ").strip().lower() in ("y", "yes")
-        except EOFError:
-            return False  # nobody at the keyboard: nothing is assumed
-
-    consent = {
-        "chats": ask("Read what you type into Claude Code and Codex chats?"),
-        "llm": ask("Send the day's sentences to your Claude Code or Codex CLI once a night "
-                   "for the grammar check? (No = a few local rules only)"),
-    }
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    config.write_json_atomically(config.DATA_DIR / "consent.json", consent)
+    print("\n  3. two things to know")
+    print("     - Accessibility: to read what you type in other apps (Gmail, Notes, Slack),")
+    print(f"       allow {__import__('os').path.realpath(sys.executable)} under System Settings >")
+    print("       Privacy & Security > Accessibility, then run `tharoor install`.")
+    print("     - Grammar: once a night the day's sentences go to your Claude Code or")
+    print("       Codex CLI for the grammar check.")
 
     print("\n  4. schedule")
     try:
@@ -108,12 +97,6 @@ def cmd_setup(args: argparse.Namespace) -> int:
     print()
     print("  Type and dictate (Wispr Flow) normally. At 23:30 he checks the day,")
     print("  at 08:30 the lesson opens by itself.")
-    print("  The day's sentences go to your Claude Code or Codex CLI for grammar." if consent["llm"]
-          else "  Grammar uses local rules only; nothing leaves this machine.")
-    print()
-    print("  To read what you type in other apps (Gmail, Notes, Slack), allow")
-    print(f"  {__import__('os').path.realpath(sys.executable)} under System Settings >")
-    print("  Privacy & Security > Accessibility, then run `tharoor install`.")
     print()
     print("  tharoor          what he does and what is running")
     print("  tharoor logs     what the scheduled jobs did")

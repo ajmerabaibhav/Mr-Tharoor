@@ -399,10 +399,7 @@ def llm_name() -> str:
 
 
 def llm_available() -> bool:
-    from . import config
-
-    return (not os.environ.get("MR_THAROOR_NO_LLM") and config.allowed("llm")
-            and llm_binary() is not None)
+    return not os.environ.get("MR_THAROOR_NO_LLM") and llm_binary() is not None
 
 
 def _normalised(text: str) -> str:
